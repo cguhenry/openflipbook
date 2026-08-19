@@ -22,6 +22,8 @@ from typing import Any
 
 from fastapi import Request
 
+from _env import env_flag
+
 TRACE_HEADER = "x-trace-id"
 
 trace_var: ContextVar[str | None] = ContextVar("openflipbook_trace_id", default=None)
@@ -409,11 +411,20 @@ async def _check_provider(name: str, url: str) -> bool:
 
 async def status_payload(service: str) -> dict[str, Any]:
     """Build the payload for /status endpoints. Cheap; safe to call often."""
-    fal_ok, openrouter_ok = await asyncio.gather(
-        _check_provider("fal", "https://fal.run/health"),
-        _check_provider("openrouter", "https://openrouter.ai/api/v1/models"),
-    )
+    mock_mode = env_flag("MOCK_PROVIDERS")
+    if mock_mode:
+        # Mock mode is a complete provider substitute. Do not probe real cloud
+        # providers merely to render /status; keeping booleans True preserves
+        # the existing status payload/UI shape while provider_mode is explicit.
+        fal_ok = True
+        openrouter_ok = True
+    else:
+        fal_ok, openrouter_ok = await asyncio.gather(
+            _check_provider("fal", "https://fal.run/health"),
+            _check_provider("openrouter", "https://openrouter.ai/api/v1/models"),
+        )
     return {
+        "provider_mode": "mock" if mock_mode else "live",
         "ok": True,
         "service": service,
         "version": os.environ.get("GIT_SHA", "dev"),

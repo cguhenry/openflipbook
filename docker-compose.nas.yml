@@ -1,0 +1,33 @@
+# NAS compatibility override for the local stack.
+#
+# Mongo 4.4 is required on the non-AVX NAS CPU. Published ports stay on the
+# NAS loopback so the stack is not exposed beyond the host.
+services:
+  mongo:
+    image: mongo:4.4
+    ports: !override
+      - "127.0.0.1:27017:27017"
+    healthcheck:
+      test: ["CMD", "mongo", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo-init:
+    image: mongo:4.4
+    command: >
+      mongo --host mongo --quiet --eval
+      "var s = db.adminCommand({replSetGetStatus: 1}); if (s.ok !== 1) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) }"
+
+  minio:
+    ports: !override
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+
+  backend:
+    ports: !override
+      - "127.0.0.1:8787:8787"
+
+  web:
+    ports: !override
+      - "127.0.0.1:3000:3000"
