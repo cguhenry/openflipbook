@@ -144,6 +144,7 @@ import {
   type SessionNodeWire,
 } from "@/lib/session-pages";
 import { useImageMorph } from "@/hooks/useImageMorph";
+import { PRODUCT_FLAGS } from "@/lib/product-flags";
 import {
   isHoverResolved,
   PRECOMPUTE_PER_PAGE,
@@ -861,13 +862,22 @@ export default function PlayPage() {
   // instead of explaining it, and entered places persist + reopen. `autonomy`
   // chooses auto (just go) vs semi (ask a quick question first).
   const {
-    enabled: worldEnabled,
+    enabled: worldModePreference,
     autonomy: worldAutonomy,
     domLabels: worldDomLabels,
     setEnabled: setWorldEnabled,
     setAutonomy: setWorldAutonomy,
     setDomLabels: setWorldDomLabels,
   } = useWorldMode(sessionId);
+  // NAS slim keeps the world implementation available upstream but prevents
+  // a persisted or manually toggled preference from entering that path.
+  const worldEnabled = !PRODUCT_FLAGS.nasSlim && worldModePreference;
+  const setWorldMode = useCallback(
+    (enabled: boolean) => {
+      if (!PRODUCT_FLAGS.nasSlim) setWorldEnabled(enabled);
+    },
+    [setWorldEnabled],
+  );
   const [styleGalleryDismissed, dismissStyleGallery] =
     useStyleGalleryDismissed(sessionId);
   const togglePinStyle = useCallback(
@@ -1720,7 +1730,7 @@ export default function PlayPage() {
     );
   }, []);
   useWander({
-    active: wandering,
+    active: wandering && PRODUCT_FLAGS.aiPrefetch,
     phase,
     nodeId: page?.nodeId ?? null,
     imageDataUrl: page?.imageDataUrl ?? null,
@@ -2126,6 +2136,7 @@ export default function PlayPage() {
   // only warm entries can carry stale enter_as/place_form classifications.
   const precomputedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
+    if (!PRODUCT_FLAGS.aiPrefetch) return;
     if (phase !== "ready") return;
     if (worldEnabled) return;
     if (!page?.imageDataUrl || !page.nodeId) return;
@@ -2237,6 +2248,7 @@ export default function PlayPage() {
     const pageScope = currentNodeId ?? "noid";
 
     const firePrefetch = (xPct: number, yPct: number) => {
+      if (!PRODUCT_FLAGS.aiPrefetch) return;
       const key = bucketKey(currentNodeId, xPct, yPct);
       if (prefetchCurrentKeyRef.current === key) return;
       prefetchCurrentKeyRef.current = key;
@@ -3019,6 +3031,7 @@ export default function PlayPage() {
       const click = normalizeClickOnImage(evt, img);
       if (!click) return;
       if (worldEnabled) return;
+      if (!PRODUCT_FLAGS.aiPrefetch) return;
       if (prefetchTimerRef.current !== null) {
         window.clearTimeout(prefetchTimerRef.current);
       }
@@ -3274,12 +3287,14 @@ export default function PlayPage() {
   }, []);
 
   const replayVideo = useCallback(() => {
+    if (!PRODUCT_FLAGS.video) return;
     if (!fallbackVideoUrl) return;
     setShowVideo(true);
     setStreamStatus("playing");
   }, [fallbackVideoUrl]);
 
   const connectStream = useCallback(async () => {
+    if (!PRODUCT_FLAGS.video) return;
     if (!page?.imageDataUrl) return;
     const wsUrl = getWSUrl();
     if (wsUrl && videoRef.current) {
@@ -3373,7 +3388,7 @@ export default function PlayPage() {
         devModel={devModel}
         setDevModel={setDevModel}
         worldMode={worldEnabled}
-        setWorldMode={setWorldEnabled}
+        setWorldMode={setWorldMode}
         autonomy={worldAutonomy}
         setAutonomy={setWorldAutonomy}
         domLabels={worldDomLabels}
@@ -3621,7 +3636,7 @@ export default function PlayPage() {
           )}
           <div className="relative aspect-[16/9] w-full">
             <div className="relative h-full w-full">
-              {fallbackVideoUrl && showVideo ? (
+              {PRODUCT_FLAGS.video && fallbackVideoUrl && showVideo ? (
                 <video
                   src={fallbackVideoUrl}
                   className="block h-full w-full object-contain"
@@ -3631,7 +3646,8 @@ export default function PlayPage() {
                   playsInline
                   controls
                 />
-              ) : process.env.NEXT_PUBLIC_LTX_WS_URL &&
+              ) : PRODUCT_FLAGS.video &&
+                process.env.NEXT_PUBLIC_LTX_WS_URL &&
                 streamStatus !== "off" &&
                 streamStatus !== "error" ? (
                 <video
@@ -3918,7 +3934,8 @@ export default function PlayPage() {
                 </div>
               )}
 
-            {phase !== "generating" &&
+            {PRODUCT_FLAGS.video &&
+              phase !== "generating" &&
               streamStatus === "connecting" &&
               !fallbackVideoUrl && (
                 <div className="pointer-events-none absolute inset-0 flex items-end bg-black/20">
@@ -3944,25 +3961,27 @@ export default function PlayPage() {
                   {wanderNote}
                 </span>
               )}
-              <button
-                type="button"
-                onClick={() => {
-                  setWanderNote(null);
-                  setWandering((w) => !w);
-                }}
-                aria-pressed={wandering}
-                disabled={!page?.imageDataUrl}
-                className={
-                  "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-white disabled:opacity-50 " +
-                  (wandering
-                    ? "animate-pulse bg-fuchsia-600"
-                    : "bg-fuchsia-600/85 hover:bg-fuchsia-600")
-                }
-                title="Wander — let the world explore itself, tapping the most interesting spot each page (stops itself after 8). Tap again to stop."
-              >
-                <span aria-hidden>{wandering ? "⏸" : "▶"}</span>
-                {wandering ? "Wandering…" : "Wander"}
-              </button>
+              {PRODUCT_FLAGS.aiPrefetch && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWanderNote(null);
+                    setWandering((w) => !w);
+                  }}
+                  aria-pressed={wandering}
+                  disabled={!page?.imageDataUrl}
+                  className={
+                    "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-white disabled:opacity-50 " +
+                    (wandering
+                      ? "animate-pulse bg-fuchsia-600"
+                      : "bg-fuchsia-600/85 hover:bg-fuchsia-600")
+                  }
+                  title="Wander — let the world explore itself, tapping the most interesting spot each page (stops itself after 8). Tap again to stop."
+                >
+                  <span aria-hidden>{wandering ? "⏸" : "▶"}</span>
+                  {wandering ? "Wandering…" : "Wander"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={triggerExpand}
@@ -4027,7 +4046,9 @@ export default function PlayPage() {
               >
                 {editMode ? t.cancelEdit : t.edit}
               </button>
-              {!process.env.NEXT_PUBLIC_LTX_WS_URL && streamStatus === "off" && (
+              {PRODUCT_FLAGS.video &&
+                !process.env.NEXT_PUBLIC_LTX_WS_URL &&
+                streamStatus === "off" && (
                 <div
                   role="group"
                   aria-label="Video quality tier"
@@ -4053,36 +4074,38 @@ export default function PlayPage() {
                   ))}
                 </div>
               )}
-              <button
-                type="button"
-                onClick={
-                  streamStatus === "off"
+              {PRODUCT_FLAGS.video && (
+                <button
+                  type="button"
+                  onClick={
+                    streamStatus === "off"
+                      ? fallbackVideoUrl && !showVideo
+                        ? replayVideo
+                        : connectStream
+                      : disconnectStream
+                  }
+                  className="rounded-full bg-black/60 px-3 py-1 text-xs text-white"
+                  title={
+                    fallbackVideoUrl && !showVideo && streamStatus === "off"
+                      ? "Replay the clip you already generated for this page (no new fal call)"
+                      : process.env.NEXT_PUBLIC_LTX_WS_URL
+                        ? "Stream an animated clip from Modal LTX"
+                        : "Generate a 5-second clip via fal-ai/ltx-video (not streaming — full MP4)"
+                  }
+                >
+                  {streamStatus === "off"
                     ? fallbackVideoUrl && !showVideo
-                      ? replayVideo
-                      : connectStream
-                    : disconnectStream
-                }
-                className="rounded-full bg-black/60 px-3 py-1 text-xs text-white"
-                title={
-                  fallbackVideoUrl && !showVideo && streamStatus === "off"
-                    ? "Replay the clip you already generated for this page (no new fal call)"
-                    : process.env.NEXT_PUBLIC_LTX_WS_URL
-                      ? "Stream an animated clip from Modal LTX"
-                      : "Generate a 5-second clip via fal-ai/ltx-video (not streaming — full MP4)"
-                }
-              >
-                {streamStatus === "off"
-                  ? fallbackVideoUrl && !showVideo
-                    ? "▶ Replay clip"
-                    : process.env.NEXT_PUBLIC_LTX_WS_URL
-                      ? t.animateStream
-                      : t.animateClip
-                  : streamStatus === "playing"
-                    ? t.animateStop
-                    : streamStatus === "connecting"
-                      ? t.generatingClip
-                      : `… ${streamStatus}`}
-              </button>
+                      ? "▶ Replay clip"
+                      : process.env.NEXT_PUBLIC_LTX_WS_URL
+                        ? t.animateStream
+                        : t.animateClip
+                    : streamStatus === "playing"
+                      ? t.animateStop
+                      : streamStatus === "connecting"
+                        ? t.generatingClip
+                        : `… ${streamStatus}`}
+                </button>
+              )}
             </div>
             {editMode ? (
               <EditForm

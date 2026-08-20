@@ -27,7 +27,27 @@ services:
   backend:
     ports: !override
       - "127.0.0.1:8787:8787"
+    environment:
+      PROGRESSIVE_DRAFT: "false"
+      WORLD_MODE: "false"
+      # This checkout has no global CRITIC flag. Route-specific critic/retry
+      # loops stay on their existing advanced-path gates; no new framework is
+      # needed for the NAS profile.
 
   web:
+    build:
+      args:
+        NEXT_PUBLIC_NAS_SLIM: "1"
+        NEXT_PUBLIC_VIDEO: "0"
+        NEXT_PUBLIC_AI_PREFETCH: "0"
+        NEXT_PUBLIC_WORLD_MODE: "0"
+        NEXT_PUBLIC_DOM_LABELS: "0"
+        NEXT_PUBLIC_LTX_WS_URL: ""
+    environment:
+      NEXT_PUBLIC_NAS_SLIM: "1"
+      NEXT_PUBLIC_VIDEO: "0"
+      NEXT_PUBLIC_AI_PREFETCH: "0"
+      NEXT_PUBLIC_WORLD_MODE: "0"
+      NEXT_PUBLIC_LTX_WS_URL: ""
     ports: !override
       - "127.0.0.1:3000:3000"

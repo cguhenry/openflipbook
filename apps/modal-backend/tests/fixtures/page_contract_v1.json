@@ -1,0 +1,187 @@
+{
+  "page_plan": {
+    "schema_version": "1.0",
+    "title": "蒸汽機如何運作",
+    "summary": "以剖面插圖介紹鍋爐、活塞與飛輪；文字由 DOM 顯示，不畫進圖片。",
+    "scene": {
+      "prompt": "Educational cutaway illustration of a steam engine, no text, no labels, clean scene.",
+      "style": "clean illustrated textbook",
+      "aspect_ratio": "4:3"
+    },
+    "text_blocks": [
+      {
+        "id": "t001",
+        "role": "title",
+        "text": "蒸汽機如何運作",
+        "anchor": "top-left"
+      },
+      {
+        "id": "t002",
+        "role": "body",
+        "text": "蒸汽推動活塞往復運動，再透過連桿帶動飛輪。",
+        "anchor": "bottom-left"
+      }
+    ],
+    "hotspots": [
+      {
+        "id": "h001",
+        "label": "鍋爐",
+        "sub_query": "鍋爐如何產生並控制蒸汽？",
+        "visual_target": "boiler chamber on the left",
+        "desired_bbox": [
+          0.05,
+          0.25,
+          0.3,
+          0.5
+        ]
+      },
+      {
+        "id": "h002",
+        "label": "活塞",
+        "sub_query": "活塞如何把蒸汽壓力轉成機械運動？",
+        "visual_target": "central piston and cylinder",
+        "desired_bbox": [
+          0.4,
+          0.25,
+          0.25,
+          0.45
+        ]
+      }
+    ],
+    "motion_hints": [
+      {
+        "target_hotspot_id": "h002",
+        "effect": "pulse",
+        "intensity": 0.2
+      }
+    ],
+    "sources": []
+  },
+  "rendered_page": {
+    "schema_version": "1.0",
+    "node_id": "node_fixture_steam",
+    "page_plan": {
+      "schema_version": "1.0",
+      "title": "蒸汽機如何運作",
+      "summary": "以剖面插圖介紹鍋爐、活塞與飛輪；文字由 DOM 顯示，不畫進圖片。",
+      "scene": {
+        "prompt": "Educational cutaway illustration of a steam engine, no text, no labels, clean scene.",
+        "style": "clean illustrated textbook",
+        "aspect_ratio": "4:3"
+      },
+      "text_blocks": [
+        {
+          "id": "t001",
+          "role": "title",
+          "text": "蒸汽機如何運作",
+          "anchor": "top-left"
+        },
+        {
+          "id": "t002",
+          "role": "body",
+          "text": "蒸汽推動活塞往復運動，再透過連桿帶動飛輪。",
+          "anchor": "bottom-left"
+        }
+      ],
+      "hotspots": [
+        {
+          "id": "h001",
+          "label": "鍋爐",
+          "sub_query": "鍋爐如何產生並控制蒸汽？",
+          "visual_target": "boiler chamber on the left",
+          "desired_bbox": [
+            0.05,
+            0.25,
+            0.3,
+            0.5
+          ]
+        },
+        {
+          "id": "h002",
+          "label": "活塞",
+          "sub_query": "活塞如何把蒸汽壓力轉成機械運動？",
+          "visual_target": "central piston and cylinder",
+          "desired_bbox": [
+            0.4,
+            0.25,
+            0.25,
+            0.45
+          ]
+        }
+      ],
+      "motion_hints": [
+        {
+          "target_hotspot_id": "h002",
+          "effect": "pulse",
+          "intensity": 0.2
+        }
+      ],
+      "sources": []
+    },
+    "image": {
+      "asset_key": "fixtures/steam-engine.jpg",
+      "width": 1200,
+      "height": 900,
+      "provider": "mock",
+      "model": "fixture"
+    },
+    "hotspots": [
+      {
+        "id": "h001",
+        "actual_bbox": [
+          0.06,
+          0.26,
+          0.28,
+          0.48
+        ],
+        "tap_region": [
+          [
+            0,
+            0
+          ],
+          [
+            0.5,
+            0
+          ],
+          [
+            0.5,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "alignment_confidence": 1.0
+      },
+      {
+        "id": "h002",
+        "actual_bbox": [
+          0.41,
+          0.26,
+          0.24,
+          0.43
+        ],
+        "tap_region": [
+          [
+            0.5,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            0.5,
+            1
+          ]
+        ],
+        "alignment_confidence": 1.0
+      }
+    ]
+  }
+}

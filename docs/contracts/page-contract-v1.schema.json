@@ -1,0 +1,419 @@
+{
+  "$defs": {
+    "AlignedHotspot": {
+      "properties": {
+        "id": {
+          "pattern": "^h[0-9]{3,}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "actual_bbox": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Actual Bbox",
+          "type": "array"
+        },
+        "tap_region": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 64,
+          "minItems": 3,
+          "title": "Tap Region",
+          "type": "array"
+        },
+        "alignment_confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Alignment Confidence",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "actual_bbox",
+        "tap_region",
+        "alignment_confidence"
+      ],
+      "title": "AlignedHotspot",
+      "type": "object"
+    },
+    "ImageAsset": {
+      "properties": {
+        "asset_key": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Asset Key",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 16384,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 16384,
+          "title": "Height",
+          "type": "integer"
+        },
+        "provider": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_key",
+        "width",
+        "height",
+        "provider",
+        "model"
+      ],
+      "title": "ImageAsset",
+      "type": "object"
+    },
+    "MotionHint": {
+      "properties": {
+        "target_hotspot_id": {
+          "anyOf": [
+            {
+              "pattern": "^h[0-9]{3,}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Hotspot Id"
+        },
+        "effect": {
+          "default": "none",
+          "enum": [
+            "none",
+            "pulse",
+            "drift-up",
+            "rotate",
+            "parallax",
+            "ken-burns",
+            "glow"
+          ],
+          "title": "Effect",
+          "type": "string"
+        },
+        "intensity": {
+          "default": 0.3,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Intensity",
+          "type": "number"
+        }
+      },
+      "title": "MotionHint",
+      "type": "object"
+    },
+    "PagePlan": {
+      "properties": {
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "scene": {
+          "$ref": "#/$defs/SceneSpec"
+        },
+        "text_blocks": {
+          "items": {
+            "$ref": "#/$defs/TextBlock"
+          },
+          "maxItems": 12,
+          "title": "Text Blocks",
+          "type": "array"
+        },
+        "hotspots": {
+          "items": {
+            "$ref": "#/$defs/PlannedHotspot"
+          },
+          "maxItems": 8,
+          "minItems": 2,
+          "title": "Hotspots",
+          "type": "array"
+        },
+        "motion_hints": {
+          "items": {
+            "$ref": "#/$defs/MotionHint"
+          },
+          "maxItems": 12,
+          "title": "Motion Hints",
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "maxItems": 20,
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "summary",
+        "scene",
+        "hotspots"
+      ],
+      "title": "PagePlan",
+      "type": "object"
+    },
+    "PlannedHotspot": {
+      "properties": {
+        "id": {
+          "pattern": "^h[0-9]{3,}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "sub_query": {
+          "maxLength": 500,
+          "minLength": 3,
+          "title": "Sub Query",
+          "type": "string"
+        },
+        "visual_target": {
+          "maxLength": 500,
+          "minLength": 3,
+          "title": "Visual Target",
+          "type": "string"
+        },
+        "desired_bbox": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Desired Bbox",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "sub_query",
+        "visual_target",
+        "desired_bbox"
+      ],
+      "title": "PlannedHotspot",
+      "type": "object"
+    },
+    "SceneSpec": {
+      "properties": {
+        "prompt": {
+          "maxLength": 8000,
+          "minLength": 10,
+          "title": "Prompt",
+          "type": "string"
+        },
+        "style": {
+          "default": "clean illustrated textbook",
+          "maxLength": 300,
+          "title": "Style",
+          "type": "string"
+        },
+        "aspect_ratio": {
+          "default": "4:3",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16"
+          ],
+          "title": "Aspect Ratio",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "title": "SceneSpec",
+      "type": "object"
+    },
+    "SourceRef": {
+      "properties": {
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "url": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        },
+        "snippet": {
+          "default": "",
+          "maxLength": 1200,
+          "title": "Snippet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "url"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    },
+    "TextBlock": {
+      "properties": {
+        "id": {
+          "pattern": "^t[0-9]{3,}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "role": {
+          "default": "body",
+          "enum": [
+            "title",
+            "subtitle",
+            "body",
+            "callout",
+            "caption",
+            "source"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 3000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "anchor": {
+          "default": "top-left",
+          "enum": [
+            "top-left",
+            "top",
+            "top-right",
+            "left",
+            "center",
+            "right",
+            "bottom-left",
+            "bottom",
+            "bottom-right"
+          ],
+          "title": "Anchor",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "TextBlock",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "node_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Node Id",
+      "type": "string"
+    },
+    "page_plan": {
+      "$ref": "#/$defs/PagePlan"
+    },
+    "image": {
+      "$ref": "#/$defs/ImageAsset"
+    },
+    "hotspots": {
+      "items": {
+        "$ref": "#/$defs/AlignedHotspot"
+      },
+      "maxItems": 8,
+      "minItems": 2,
+      "title": "Hotspots",
+      "type": "array"
+    }
+  },
+  "required": [
+    "node_id",
+    "page_plan",
+    "image",
+    "hotspots"
+  ],
+  "title": "RenderedPage",
+  "type": "object"
+}
