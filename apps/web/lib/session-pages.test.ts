@@ -1,4 +1,4 @@
-import type { SceneView } from "@openflipbook/config";
+import type { AlignedHotspotV1, PagePlanV1, SceneView } from "@openflipbook/config";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -50,6 +50,30 @@ describe("nodeToPage (?continue= hydration)", () => {
 
   it("leaves relation absent when a pre-relation server omits it (descend semantics)", () => {
     expect("relation" in nodeToPage(wire())).toBe(false);
+  });
+
+  it("hydrates the optional Page Contract metadata across session reload", () => {
+    const pagePlan: PagePlanV1 = {
+      schema_version: "1.0",
+      title: "蒸汽機",
+      summary: "DOM text",
+      scene: { prompt: "steam engine, no text, no labels", style: "diagram", aspect_ratio: "16:9" },
+      text_blocks: [{ id: "t001", role: "title", text: "蒸汽機", anchor: "top-left" }],
+      hotspots: [{ id: "h001", label: "鍋爐", sub_query: "看鍋爐", visual_target: "boiler", desired_bbox: [0.1, 0.1, 0.2, 0.2] }],
+      motion_hints: [],
+      sources: [],
+    };
+    const aligned: AlignedHotspotV1[] = [{
+      id: "h001",
+      actual_bbox: [0.1, 0.1, 0.2, 0.2] as const,
+      tap_region: [[0, 0], [1, 0], [1, 1], [0, 1]],
+      alignment_confidence: 1,
+    }];
+    const page = nodeToPage(wire({ page_plan: pagePlan, aligned_hotspots: aligned }));
+    expect(page.pagePlan).toEqual(pagePlan);
+    expect(page.alignedHotspots).toEqual(aligned);
+    expect(nodeToPage(wire()).pagePlan).toBeNull();
+    expect(nodeToPage(wire()).alignedHotspots).toBeNull();
   });
 });
 

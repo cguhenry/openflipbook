@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, CSSProperties, DragEvent, FormEvent } from "react";
 import type {
+  AlignedHotspotV1,
   Citation,
   EnterAs,
   EntityEditPlan,
@@ -10,6 +11,7 @@ import type {
   GenerateEvent,
   MapCrop,
   ObserverPose,
+  PagePlanV1,
   ScaleTier,
   SceneView,
   ViewLevel,
@@ -145,11 +147,14 @@ import {
 } from "@/lib/session-pages";
 import { useImageMorph } from "@/hooks/useImageMorph";
 import { PRODUCT_FLAGS } from "@/lib/product-flags";
+import PageContractOverlay from "@/components/PlayPage/PageContractOverlay";
+import { deterministicTapPrefetch, resolveHotspot } from "@/lib/hotspot-resolver";
 import {
   isHoverResolved,
   PRECOMPUTE_PER_PAGE,
   PREFETCH_LRU_MAX,
   PREFETCH_PER_PAGE,
+  type PrefetchEntry,
   usePrefetchCache,
 } from "@/hooks/usePrefetchCache";
 
@@ -218,6 +223,8 @@ interface PersistBody {
   scale?: "component" | "peer" | "container";
   scale_tier?: ScaleTier;
   scene_view?: SceneView | null;
+  page_plan?: PagePlanV1 | null;
+  aligned_hotspots?: AlignedHotspotV1[] | null;
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -1016,6 +1023,8 @@ export default function PlayPage() {
               title: evt.page_title,
               imageDataUrl: evt.image_data_url,
               sources: evtSources,
+              pagePlan: evt.page_plan ?? null,
+              alignedHotspots: evt.aligned_hotspots ?? null,
               // Mirror the persist body: an edit is a REVISION. Tap/fresh
               // stay absent = descend.
               ...(body.mode === "edit" ? { relation: "edit" as const } : {}),
@@ -1080,6 +1089,8 @@ export default function PlayPage() {
                   title: s.title ?? null,
                 })),
                 scene_view: foldedSceneView,
+                page_plan: evt.page_plan ?? null,
+                aligned_hotspots: evt.aligned_hotspots ?? null,
               },
               traceId
             ).then((saved) => {
@@ -1097,6 +1108,8 @@ export default function PlayPage() {
                   imageDataUrl: evt.image_data_url,
                   parentId: body.current_node_id || null,
                   sources: evtSources,
+                  pagePlan: evt.page_plan ?? null,
+                  alignedHotspots: evt.aligned_hotspots ?? null,
                   // Same relation the persist body sent — so the in-session
                   // map reads this page like the atlas will after a reload.
                   ...(body.mode === "edit" ? { relation: "edit" as const } : {}),
@@ -2557,16 +2570,33 @@ export default function PlayPage() {
       // a tap that is KNOWN to zoom-continue earns the push-in — anything else
       // gets the honest shimmer). Skip when a hint is present (the prefetch was
       // resolved without the user's note) or in World Mode (backend classifies).
-      const cached =
-        hint || worldEnabled
+      const deterministicHit =
+        PRODUCT_FLAGS.deterministicHitmap &&
+        !hint &&
+        !worldEnabled &&
+        page.pagePlan &&
+        page.alignedHotspots?.length
+          ? resolveHotspot(page.pagePlan, page.alignedHotspots, click.x_pct, click.y_pct)
+          : null;
+      const cached: PrefetchEntry | undefined = deterministicHit
+        ? deterministicTapPrefetch(deterministicHit)
+        : hint || worldEnabled
           ? undefined
           : cache.get(bucketKey(currentNodeId, click.x_pct, click.y_pct));
+      const legacyCached = deterministicHit ? undefined : cached;
+      if (deterministicHit) {
+        hudEmit("hitmap:resolve", {
+          hotspot_id: deterministicHit.planned.id,
+          method: deterministicHit.method,
+          confidence: deterministicHit.aligned.alignment_confidence,
+        });
+      }
       const willZoom =
         !hint &&
         !worldEnabled &&
         !wanderingRef.current &&
-        cached?.groundable !== false &&
-        (cached?.enter_as === "scene" || cached?.enter_as === "submap");
+        legacyCached?.groundable !== false &&
+        (legacyCached?.enter_as === "scene" || legacyCached?.enter_as === "submap");
       // Dive converges on the CLAMPED region-crop centre (an edge tap clamps
       // the crop inward, and the arrival renders that crop) — in element px
       // over the object-fit:contain content rect.
@@ -2598,28 +2628,30 @@ export default function PlayPage() {
       });
       hudEmit("morph:start", { ox: diveOx, oy: diveOy, t: nowMs() });
       let annotated = currentImage;
-      try {
-        annotated = await annotateClickPoint(
-          currentImage,
-          click.x_pct,
-          click.y_pct
-        );
-      } catch {
-        // Fall back to the raw image + numeric coords if canvas taint or
-        // decode failed. VLM still gets the text coords as a hint.
+      if (!deterministicHit) {
+        try {
+          annotated = await annotateClickPoint(
+            currentImage,
+            click.x_pct,
+            click.y_pct
+          );
+        } catch {
+          // Fall back to the raw image + numeric coords if canvas taint or
+          // decode failed. VLM still gets the text coords as a hint.
+        }
       }
       // HUD visibility for the silent hover warming (UI_AUDIT #10): count
       // only clicks where the shortcut was eligible — a deliberate skip
       // (hint / world mode) is neither a hit nor a miss.
-      if (!hint && !worldEnabled) {
-        hudEmit(cached ? "prefetch:hit" : "prefetch:miss", {});
+      if (!hint && !worldEnabled && !deterministicHit) {
+        hudEmit(legacyCached ? "prefetch:hit" : "prefetch:miss", {});
       }
       // Smarter taps: the resolver confidently flagged this spot as empty
       // (open sky / water / blank margin). Don't burn a generation on a
       // confabulated page — undo the bloom and give a gentle "nothing here".
       // Only when we have a prewarmed verdict (a deliberate tap is usually
       // hover-warmed); cold taps fall through to the normal path unchanged.
-      if (!hint && !worldEnabled && cached?.groundable === false) {
+      if (!hint && !worldEnabled && legacyCached?.groundable === false) {
         setMorphFx(null);
         setClickRipple(null);
         setBlankTap({ xPx: px, yPx: py, key: Date.now() });
@@ -2804,16 +2836,16 @@ export default function PlayPage() {
               // faithful Kontext zoom (TAP_ZOOM_CONTINUE). Withheld while
               // Wandering: auto-taps stay topical, or compounding region
               // crops would degrade the descent after a few hops.
-              ...(cached.enter_as &&
-              (cached.enter_as === "scene" || cached.enter_as === "submap") &&
+              ...(legacyCached?.enter_as &&
+              (legacyCached.enter_as === "scene" || legacyCached.enter_as === "submap") &&
               !wanderingRef.current
-                ? { prefetched_enter_as: cached.enter_as as EnterAs }
+                ? { prefetched_enter_as: legacyCached.enter_as as EnterAs }
                 : {}),
               // place_form rides under the SAME wander rule as enter_as: a
               // wander auto-tap withholds every prefetched classification so
               // the in-band resolve decides everything for that hop.
-              ...(cached.place_form && !wanderingRef.current
-                ? { prefetched_place_form: cached.place_form }
+              ...(legacyCached?.place_form && !wanderingRef.current
+                ? { prefetched_place_form: legacyCached.place_form }
                 : {}),
             }
           : {}),
@@ -3695,6 +3727,14 @@ export default function PlayPage() {
                       return null;
                     });
                   }}
+                />
+              )}
+              {PRODUCT_FLAGS.domLabels && page.pagePlan && (
+                <PageContractOverlay
+                  pagePlan={page.pagePlan}
+                  alignedHotspots={page.alignedHotspots ?? []}
+                  imageRect={containRect}
+                  showHotspots={false}
                 />
               )}
               {strokeState && <StrokeOverlay pxPoints={strokeState.pxPoints} />}

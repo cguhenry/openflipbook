@@ -8,6 +8,8 @@ describe("NAS product flags", () => {
       nasSlim: false,
       video: true,
       aiPrefetch: true,
+      domLabels: false,
+      deterministicHitmap: false,
     });
   });
 
@@ -18,7 +20,13 @@ describe("NAS product flags", () => {
         NEXT_PUBLIC_VIDEO: "1",
         NEXT_PUBLIC_AI_PREFETCH: "1",
       }),
-    ).toEqual({ nasSlim: true, video: false, aiPrefetch: false });
+    ).toEqual({
+      nasSlim: true,
+      video: false,
+      aiPrefetch: false,
+      domLabels: false,
+      deterministicHitmap: false,
+    });
   });
 
   it("allows individual opt-out outside NAS slim", () => {
@@ -27,6 +35,12 @@ describe("NAS product flags", () => {
         NEXT_PUBLIC_VIDEO: "false",
         NEXT_PUBLIC_AI_PREFETCH: "0",
       }),
-    ).toEqual({ nasSlim: false, video: false, aiPrefetch: false });
+    ).toEqual({
+      nasSlim: false,
+      video: false,
+      aiPrefetch: false,
+      domLabels: false,
+      deterministicHitmap: false,
+    });
   });
 });

@@ -35,6 +35,7 @@ export type HudEventName =
   | "prefetch:miss"
   | "prefetch:inflight"
   | "precompute:candidates"
+  | "hitmap:resolve"
   | "morph:start"
   | "morph:end"
   | "react:commit"

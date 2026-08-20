@@ -64,6 +64,8 @@ async def test_query_stream_end_to_end_with_zero_keys() -> None:
     assert _decodable_jpeg(final["image_data_url"])
     assert final["image_model"] == "mock/fresh"
     assert final["page_title"].startswith("Mock page:")
+    assert final["page_plan"]["schema_version"] == "1.0"
+    assert len(final["aligned_hotspots"]) == len(final["page_plan"]["hotspots"])
     assert final["session_spend_estimate"] > 0  # the meter runs on mocks too
 
 
@@ -92,6 +94,8 @@ async def test_tap_stream_resolves_and_renders() -> None:
     assert resolved["subject"]  # the mock client routed the click prompt
     final = next(e for e in events if e["type"] == "final")
     assert _decodable_jpeg(final["image_data_url"])
+    assert final["page_plan"] is not None
+    assert final["aligned_hotspots"] is not None
 
 
 async def test_mock_determinism() -> None:

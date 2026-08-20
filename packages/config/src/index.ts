@@ -1,3 +1,5 @@
+import type { AlignedHotspotV1, PagePlanV1 } from "./page-contract";
+
 export type AspectRatio = "16:9" | "9:16" | "1:1" | "4:3" | "3:4";
 
 export type GenerateMode = "query" | "tap" | "edit" | "expand" | "ascend";
@@ -368,6 +370,10 @@ export interface GenerateFinalEvent {
   // docs/COSTS.md prices (providers/spend.py). Additive; absent on older
   // backends.
   session_spend_estimate?: number;
+  // A2 DOM text + deterministic hitmap contract. Mock-only this round;
+  // absent/null on legacy and non-mock live pages.
+  page_plan?: PagePlanV1 | null;
+  aligned_hotspots?: AlignedHotspotV1[] | null;
   trace_id?: string;
 }
 

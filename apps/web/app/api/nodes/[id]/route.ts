@@ -32,6 +32,8 @@ export async function GET(_req: Request, { params }: Params) {
     aspect_ratio: row.aspect_ratio,
     click_in_parent: row.click_in_parent,
     sources: row.sources,
+    page_plan: row.page_plan ?? null,
+    aligned_hotspots: row.aligned_hotspots ?? null,
     geo_extracted: row.geo_extracted,
     created_at: row.created_at,
   });

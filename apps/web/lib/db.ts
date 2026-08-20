@@ -1,5 +1,11 @@
 import { MongoClient, type Collection, type Db, type Document } from "mongodb";
-import type { ScaleTier, SceneView, ViewSpec } from "@openflipbook/config";
+import type {
+  AlignedHotspotV1,
+  PagePlanV1,
+  ScaleTier,
+  SceneView,
+  ViewSpec,
+} from "@openflipbook/config";
 import { readServerEnv, requireMongo } from "./env";
 
 declare global {
@@ -131,6 +137,9 @@ export interface NodeDoc extends Document {
   // Geometric world (GEOMETRIC_WORLD): the observer pose + view level this
   // scene was rendered from. Optional + null for pre-geometry / classic nodes.
   scene_view?: SceneView | null;
+  // A2 Page Contract metadata. Optional on the document for old Mongo rows.
+  page_plan?: PagePlanV1 | null;
+  aligned_hotspots?: AlignedHotspotV1[] | null;
   // When entity extraction last RAN for this node (set even if it found zero
   // entities). Durable "already extracted" marker so a later revisit / reload
   // never silently re-runs the non-deterministic VLM pass. Absent on legacy
@@ -158,6 +167,8 @@ export interface NodeInsert {
   scale?: "component" | "peer" | "container" | null;
   scale_tier?: ScaleTier | null;
   scene_view?: SceneView | null;
+  page_plan?: PagePlanV1 | null;
+  aligned_hotspots?: AlignedHotspotV1[] | null;
 }
 
 export interface NodeRow {
@@ -176,6 +187,8 @@ export interface NodeRow {
   relation: "descend" | "expand" | "ascend" | "edit";
   scale: "component" | "peer" | "container";
   scale_tier: ScaleTier | null;
+  page_plan: PagePlanV1 | null;
+  aligned_hotspots: AlignedHotspotV1[] | null;
   // The observer pose + view level this node was rendered from. Null on
   // pre-geometry / classic nodes. Read back on revisit so the minimap scopes to
   // the right frame and the entered angle is reproducible.
@@ -196,6 +209,8 @@ export function toRow(doc: NodeDoc): NodeRow {
     scale,
     scale_tier,
     scene_view,
+    page_plan,
+    aligned_hotspots,
     geo_extracted_at,
     ...rest
   } = doc;
@@ -208,6 +223,8 @@ export function toRow(doc: NodeDoc): NodeRow {
     scale: scale ?? "peer",
     scale_tier: scale_tier ?? null,
     scene_view: scene_view ?? null,
+    page_plan: page_plan ?? null,
+    aligned_hotspots: aligned_hotspots ?? null,
     geo_extracted: geo_extracted_at != null,
     created_at: created_at.toISOString(),
   };
@@ -232,6 +249,8 @@ export async function insertNode(n: NodeInsert): Promise<NodeRow> {
     scale: n.scale ?? "peer",
     scale_tier: n.scale_tier ?? null,
     scene_view: n.scene_view ?? null,
+    page_plan: n.page_plan ?? null,
+    aligned_hotspots: n.aligned_hotspots ?? null,
     created_at: new Date(),
   };
   await collection.insertOne(doc);

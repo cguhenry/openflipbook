@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import type { ScaleTier, SceneView } from "@openflipbook/config";
+import type {
+  AlignedHotspotV1,
+  PagePlanV1,
+  ScaleTier,
+  SceneView,
+} from "@openflipbook/config";
 import { insertNode } from "@/lib/db";
 import { decodeDataUrl, uploadJpeg } from "@/lib/r2";
 import { readServerEnv } from "@/lib/env";
@@ -25,6 +30,8 @@ interface CreateBody {
   scale?: "component" | "peer" | "container";
   scale_tier?: ScaleTier | null;
   scene_view?: SceneView | null;
+  page_plan?: PagePlanV1 | null;
+  aligned_hotspots?: AlignedHotspotV1[] | null;
 }
 
 export async function POST(req: Request) {
@@ -87,6 +94,8 @@ export async function POST(req: Request) {
     scale: body.scale ?? "peer",
     scale_tier: body.scale_tier ?? null,
     scene_view: body.scene_view ?? null,
+    page_plan: body.page_plan ?? null,
+    aligned_hotspots: body.aligned_hotspots ?? null,
   });
 
   const result = {

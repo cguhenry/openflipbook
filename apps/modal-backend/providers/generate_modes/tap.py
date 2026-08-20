@@ -1136,6 +1136,18 @@ async def stream_tap(
             body.session_id, result.model, images=billed_images
         ),
     }
+    if env_flag("MOCK_PROVIDERS"):
+        # A2's complete contract is deterministic and zero-cost. Live mode
+        # stays legacy-only until B0 proves planner + image alignment.
+        from contracts.mock_page_contract import build_mock_contract_payload
+
+        final_payload.update(
+            build_mock_contract_payload(
+                effective_query,
+                plan.page_title,
+                body.aspect_ratio,
+            )
+        )
     # Which non-fresh op actually rendered the image — additive, absent on
     # the fresh path (unchanged wire shape). Lets the demo trace / A-B
     # drivers machine-check the route instead of inferring from the model.

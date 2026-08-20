@@ -2,6 +2,8 @@ export interface ProductFlags {
   nasSlim: boolean;
   video: boolean;
   aiPrefetch: boolean;
+  domLabels: boolean;
+  deterministicHitmap: boolean;
 }
 
 function flag(raw: string | undefined, defaultValue: boolean): boolean {
@@ -22,6 +24,8 @@ export function resolveProductFlags(
     // features elsewhere, but cannot re-enable them while NAS slim is on.
     video: !nasSlim && flag(env.NEXT_PUBLIC_VIDEO, true),
     aiPrefetch: !nasSlim && flag(env.NEXT_PUBLIC_AI_PREFETCH, true),
+    domLabels: flag(env.NEXT_PUBLIC_DOM_LABELS, false),
+    deterministicHitmap: flag(env.NEXT_PUBLIC_DETERMINISTIC_HITMAP, false),
   };
 }
 
@@ -29,4 +33,6 @@ export const PRODUCT_FLAGS = resolveProductFlags({
   NEXT_PUBLIC_NAS_SLIM: process.env.NEXT_PUBLIC_NAS_SLIM,
   NEXT_PUBLIC_VIDEO: process.env.NEXT_PUBLIC_VIDEO,
   NEXT_PUBLIC_AI_PREFETCH: process.env.NEXT_PUBLIC_AI_PREFETCH,
+  NEXT_PUBLIC_DOM_LABELS: process.env.NEXT_PUBLIC_DOM_LABELS,
+  NEXT_PUBLIC_DETERMINISTIC_HITMAP: process.env.NEXT_PUBLIC_DETERMINISTIC_HITMAP,
 });

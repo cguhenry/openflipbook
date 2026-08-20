@@ -37,6 +37,8 @@ export async function GET(req: Request, { params }: Params) {
       page_title: row.page_title,
       image_url: `${publicBase}/${row.image_key}`,
       click_in_parent: row.click_in_parent,
+      page_plan: row.page_plan ?? null,
+      aligned_hotspots: row.aligned_hotspots ?? null,
       created_at: row.created_at,
     })),
   });

@@ -1,4 +1,10 @@
-import type { Citation, NodeRelation, SceneView } from "@openflipbook/config";
+import type {
+  AlignedHotspotV1,
+  Citation,
+  NodeRelation,
+  PagePlanV1,
+  SceneView,
+} from "@openflipbook/config";
 
 /** The in-session page graph node (play page state + history + map views). */
 export interface Page {
@@ -30,6 +36,8 @@ export interface Page {
   // tap-in / fresh page) — same default the server applies on the wire, so
   // the in-session map/minimap read breadth vs depth like the atlas does.
   relation?: NodeRelation;
+  pagePlan?: PagePlanV1 | null;
+  alignedHotspots?: AlignedHotspotV1[] | null;
 }
 
 /** One node as served by GET /api/sessions/[id] (the ?continue= hydration). */
@@ -47,6 +55,8 @@ export interface SessionNodeWire {
   // Optional for back-compat with servers that predate the field; the node
   // rows always carry it in Mongo (defaulted "descend" by toRow).
   relation?: NodeRelation;
+  page_plan?: PagePlanV1 | null;
+  aligned_hotspots?: AlignedHotspotV1[] | null;
 }
 
 /** Fold the SSE final's scene_view stamp over the request's scene_view.
@@ -92,6 +102,8 @@ export function nodeToPage(n: SessionNodeWire): Page {
     sources: Array.isArray(n.sources) ? n.sources : [],
     sceneView: n.scene_view ?? null,
     geoExtracted: n.geo_extracted ?? false,
+    pagePlan: n.page_plan ?? null,
+    alignedHotspots: n.aligned_hotspots ?? null,
     // Explicit "descend" rides through too (not collapsed to absent) — the
     // atlas gets the same concrete value off NodeRow, and world-layout keys
     // its zoom-in nesting shrink on the explicit form.
