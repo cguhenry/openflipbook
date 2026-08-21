@@ -5,10 +5,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildFlipbookPdf,
   buildGif,
+  buildPortableZip,
   buildWorldZip,
   buildZip,
   sampleEvenly,
   type ExportPage,
+  type PortableExportNode,
   type WorldExportNode,
 } from "./export-build";
 
@@ -54,6 +56,52 @@ describe("buildZip", () => {
     const graph = JSON.parse(await zip.file("graph.json")!.async("string"));
     expect(graph.exported_path).toHaveLength(2);
     expect(graph.exported_path[1].parent_id).toBe("a");
+  });
+});
+
+describe("buildPortableZip", () => {
+  it("contains the offline viewer, manifest, and every local image", async () => {
+    const jpg = await tinyJpeg();
+    const nodes: PortableExportNode[] = [
+      {
+        id: "root",
+        session_id: "session_test",
+        parent_id: null,
+        query: "root",
+        page_title: "根頁",
+        image_asset: "images/root.jpg",
+        bytes: jpg,
+        created_at: "2026-08-21T01:00:00Z",
+      },
+      {
+        id: "child",
+        session_id: "session_test",
+        parent_id: "root",
+        query: "child",
+        page_title: "子頁",
+        image_asset: "images/child.jpg",
+        bytes: jpg,
+        created_at: "2026-08-21T01:01:00Z",
+      },
+    ];
+    const bytes = await buildPortableZip(nodes, {
+      indexHtml: "<!doctype html>",
+      playerCss: "body {}",
+      playerJs: "window.OPENFLIPBOOK_OFFLINE_BOOK;",
+    });
+    const zip = await JSZip.loadAsync(bytes);
+    const names = Object.keys(zip.files);
+    expect(names).toEqual(expect.arrayContaining([
+      "index.html",
+      "assets/player.css",
+      "assets/player.js",
+      "data/book.js",
+      "images/root.jpg",
+      "images/child.jpg",
+    ]));
+    const book = await zip.file("data/book.js")!.async("string");
+    expect(book).toContain('"id":"root"');
+    expect(book).toContain('"id":"child"');
   });
 });
 

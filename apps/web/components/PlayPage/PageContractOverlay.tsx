@@ -7,24 +7,24 @@ import type {
 } from "@openflipbook/config";
 
 const ANCHOR_CLASS: Record<TextAnchorV1, string> = {
-  "top-left": "left-3 top-3 items-start text-left",
-  top: "left-1/2 top-3 -translate-x-1/2 items-center text-center",
-  "top-right": "right-3 top-3 items-end text-right",
-  left: "left-3 top-1/2 -translate-y-1/2 items-start text-left",
+  "top-left": "left-[clamp(.4rem,1.6vw,.75rem)] top-[clamp(.4rem,1.6vw,.75rem)] items-start text-left",
+  top: "left-1/2 top-[clamp(.4rem,1.6vw,.75rem)] -translate-x-1/2 items-center text-center",
+  "top-right": "right-[clamp(.4rem,1.6vw,.75rem)] top-[clamp(.4rem,1.6vw,.75rem)] items-end text-right",
+  left: "left-[clamp(.4rem,1.6vw,.75rem)] top-1/2 -translate-y-1/2 items-start text-left",
   center: "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 items-center text-center",
-  right: "right-3 top-1/2 -translate-y-1/2 items-end text-right",
-  "bottom-left": "bottom-3 left-3 items-start text-left",
-  bottom: "bottom-3 left-1/2 -translate-x-1/2 items-center text-center",
-  "bottom-right": "bottom-3 right-3 items-end text-right",
+  right: "right-[clamp(.4rem,1.6vw,.75rem)] top-1/2 -translate-y-1/2 items-end text-right",
+  "bottom-left": "bottom-[clamp(.4rem,1.6vw,.75rem)] left-[clamp(.4rem,1.6vw,.75rem)] items-start text-left",
+  bottom: "bottom-[clamp(.4rem,1.6vw,.75rem)] left-1/2 -translate-x-1/2 items-center text-center",
+  "bottom-right": "bottom-[clamp(.4rem,1.6vw,.75rem)] right-[clamp(.4rem,1.6vw,.75rem)] items-end text-right",
 };
 
 export function textBlockClass(block: TextBlockV1): string {
   const size = block.role === "title"
-    ? "max-w-[78%] text-[clamp(1.05rem,3vw,2rem)] font-semibold"
+    ? "max-w-[min(84%,34rem)] text-[clamp(.95rem,3vw,1.85rem)] font-semibold leading-tight"
     : block.role === "subtitle"
-      ? "max-w-[74%] text-[clamp(.85rem,2vw,1.25rem)] font-medium"
-      : "max-w-[72%] text-[clamp(.72rem,1.45vw,1rem)]";
-  return `absolute flex flex-col ${ANCHOR_CLASS[block.anchor]} ${size}`;
+      ? "max-w-[min(82%,32rem)] text-[clamp(.8rem,2vw,1.15rem)] font-medium leading-snug"
+      : "max-w-[min(80%,30rem)] text-[clamp(.7rem,1.45vw,.98rem)] leading-snug";
+  return `absolute flex flex-col overflow-wrap-anywhere ${ANCHOR_CLASS[block.anchor]} ${size}`;
 }
 
 export interface PageContractOverlayProps {
@@ -48,13 +48,19 @@ export function PageContractOverlay({
   return (
     <div
       data-testid="page-contract-overlay"
+      data-responsive-overlay="a3"
       aria-hidden="false"
       className="pointer-events-none absolute z-[6] overflow-hidden"
       style={frameStyle ?? { inset: 0 }}
     >
       {pagePlan.text_blocks.map((block) => (
-        <div key={block.id} data-text-block-id={block.id} className={textBlockClass(block)}>
-          <span className="rounded-md bg-[color:rgba(250,248,240,.86)] px-2 py-1 text-[var(--color-ink)] shadow-sm backdrop-blur-[2px]">
+        <div
+          key={block.id}
+          data-text-block-id={block.id}
+          data-text-role={block.role}
+          className={textBlockClass(block)}
+        >
+          <span className="max-w-full overflow-wrap-anywhere rounded-md bg-[color:rgba(250,248,240,.86)] px-[clamp(.4rem,1.4vw,.7rem)] py-[clamp(.25rem,.9vw,.45rem)] text-[var(--color-ink)] shadow-sm backdrop-blur-[2px]">
             {block.text}
           </span>
         </div>

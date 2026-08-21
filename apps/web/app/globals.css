@@ -30,6 +30,51 @@
   --color-edge: rgba(243, 234, 214, 0.18);
 }
 
+:root {
+  --flipbook-transition-x: 50%;
+  --flipbook-transition-y: 50%;
+}
+
+.flipbook-page-transition-surface {
+  view-transition-name: flipbook-page;
+}
+
+::view-transition-old(flipbook-page) {
+  animation: flipbook-page-old 160ms ease-out both;
+  transform-origin: var(--flipbook-transition-x) var(--flipbook-transition-y);
+}
+
+::view-transition-new(flipbook-page) {
+  animation: flipbook-page-new 240ms cubic-bezier(.2,.75,.25,1) both;
+  transform-origin: var(--flipbook-transition-x) var(--flipbook-transition-y);
+}
+
+@keyframes flipbook-page-old {
+  to { opacity: 0; transform: scale(1.018); filter: blur(2px); }
+}
+
+@keyframes flipbook-page-new {
+  from { opacity: 0; transform: scale(.99); filter: blur(1.5px); }
+}
+
+.flipbook-no-view-transition .flipbook-page-transition-surface {
+  animation: flipbook-page-fallback 220ms ease-out both;
+}
+
+@keyframes flipbook-page-fallback {
+  from { opacity: .35; transform: scale(.99); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(flipbook-page),
+  ::view-transition-new(flipbook-page),
+  .flipbook-no-view-transition .flipbook-page-transition-surface {
+    animation-duration: 1ms !important;
+    filter: none !important;
+    transform: none !important;
+  }
+}
+
 html,
 body {
   background: var(--color-canvas);

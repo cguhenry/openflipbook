@@ -4,6 +4,8 @@ export interface ProductFlags {
   aiPrefetch: boolean;
   domLabels: boolean;
   deterministicHitmap: boolean;
+  html5Transitions: boolean;
+  offlineExport: boolean;
 }
 
 function flag(raw: string | undefined, defaultValue: boolean): boolean {
@@ -26,6 +28,8 @@ export function resolveProductFlags(
     aiPrefetch: !nasSlim && flag(env.NEXT_PUBLIC_AI_PREFETCH, true),
     domLabels: flag(env.NEXT_PUBLIC_DOM_LABELS, false),
     deterministicHitmap: flag(env.NEXT_PUBLIC_DETERMINISTIC_HITMAP, false),
+    html5Transitions: flag(env.NEXT_PUBLIC_HTML5_TRANSITIONS, false),
+    offlineExport: flag(env.NEXT_PUBLIC_OFFLINE_EXPORT, false),
   };
 }
 
@@ -35,4 +39,6 @@ export const PRODUCT_FLAGS = resolveProductFlags({
   NEXT_PUBLIC_AI_PREFETCH: process.env.NEXT_PUBLIC_AI_PREFETCH,
   NEXT_PUBLIC_DOM_LABELS: process.env.NEXT_PUBLIC_DOM_LABELS,
   NEXT_PUBLIC_DETERMINISTIC_HITMAP: process.env.NEXT_PUBLIC_DETERMINISTIC_HITMAP,
+  NEXT_PUBLIC_HTML5_TRANSITIONS: process.env.NEXT_PUBLIC_HTML5_TRANSITIONS,
+  NEXT_PUBLIC_OFFLINE_EXPORT: process.env.NEXT_PUBLIC_OFFLINE_EXPORT,
 });

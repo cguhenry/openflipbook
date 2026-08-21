@@ -10,6 +10,8 @@ describe("NAS product flags", () => {
       aiPrefetch: true,
       domLabels: false,
       deterministicHitmap: false,
+      html5Transitions: false,
+      offlineExport: false,
     });
   });
 
@@ -26,6 +28,8 @@ describe("NAS product flags", () => {
       aiPrefetch: false,
       domLabels: false,
       deterministicHitmap: false,
+      html5Transitions: false,
+      offlineExport: false,
     });
   });
 
@@ -41,6 +45,8 @@ describe("NAS product flags", () => {
       aiPrefetch: false,
       domLabels: false,
       deterministicHitmap: false,
+      html5Transitions: false,
+      offlineExport: false,
     });
   });
 });

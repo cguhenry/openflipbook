@@ -149,6 +149,7 @@ import { useImageMorph } from "@/hooks/useImageMorph";
 import { PRODUCT_FLAGS } from "@/lib/product-flags";
 import PageContractOverlay from "@/components/PlayPage/PageContractOverlay";
 import { deterministicTapPrefetch, resolveHotspot } from "@/lib/hotspot-resolver";
+import { runPageViewTransition } from "@/lib/page-transition";
 import {
   isHoverResolved,
   PRECOMPUTE_PER_PAGE,
@@ -1886,6 +1887,15 @@ export default function PlayPage() {
         },
       });
       // Opt-in gallery (Wave 7): this page fronts the published session.
+      if (PRODUCT_FLAGS.offlineExport) {
+        items.push({
+          label: "Export offline book (ZIP)",
+          onClick: () => {
+            close();
+            window.open("/api/export/offline/" + page.sessionId, "_blank");
+          },
+        });
+      }
       const publishSessionId = page.sessionId;
       items.push({
         label: "Publish session to gallery",
@@ -1941,7 +1951,9 @@ export default function PlayPage() {
     if (!id) return prev;
     const target = prev.items.find((p) => p.nodeId === id);
     if (!target) return prev;
-    setPage(target);
+    const applyTarget = () => setPage(target);
+    if (PRODUCT_FLAGS.html5Transitions) runPageViewTransition(applyTarget);
+    else applyTarget();
     setPhase("ready");
     setError(null);
     setStatusMsg(null);
@@ -1976,7 +1988,9 @@ export default function PlayPage() {
     setHistory((prev) => {
       const target = prev.items.find((p) => p.nodeId === nodeId);
       if (!target) return prev;
-      setPage(target);
+      const applyTarget = () => setPage(target);
+      if (PRODUCT_FLAGS.html5Transitions) runPageViewTransition(applyTarget);
+      else applyTarget();
       setPhase("ready");
       setError(null);
       setStatusMsg(null);
@@ -3591,7 +3605,8 @@ export default function PlayPage() {
         />
       ) : page?.imageDataUrl ? (
         <figure
-          className="relative overflow-hidden rounded-2xl border border-[var(--color-ink)]/20 bg-white shadow-lg"
+          className={"relative overflow-hidden rounded-2xl border border-[var(--color-ink)]/20 bg-white shadow-lg " +
+            (PRODUCT_FLAGS.html5Transitions ? "flipbook-page-transition-surface" : "")}
           onContextMenu={(e) => {
             if (!page?.imageDataUrl) return;
             e.preventDefault();

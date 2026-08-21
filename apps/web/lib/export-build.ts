@@ -6,6 +6,11 @@
 
 import JSZip from "jszip";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import {
+  buildPortableBook,
+  portableBookScript,
+  type OfflineSourceNode,
+} from "./portable-book";
 
 export interface ExportPage {
   id: string;
@@ -53,6 +58,35 @@ export async function buildZip(pages: ExportPage[]): Promise<Uint8Array> {
       2,
     ),
   );
+  return zip.generateAsync({ type: "uint8array" });
+}
+
+export interface PortableExportNode extends OfflineSourceNode {
+  bytes: Uint8Array | null;
+}
+
+export interface PortableZipAssets {
+  indexHtml: string;
+  playerCss: string;
+  playerJs: string;
+}
+
+/** ZIP: a classic-script book manifest, local viewer assets, and local images. */
+export async function buildPortableZip(
+  nodes: readonly PortableExportNode[],
+  assets: PortableZipAssets,
+): Promise<Uint8Array> {
+  const book = buildPortableBook(nodes);
+  const zip = new JSZip();
+  zip.file("index.html", assets.indexHtml);
+  zip.file("assets/player.css", assets.playerCss);
+  zip.file("assets/player.js", assets.playerJs);
+  zip.file("data/book.js", portableBookScript(book));
+  for (const node of nodes) {
+    if (node.bytes && node.image_asset) {
+      zip.file(node.image_asset, node.bytes);
+    }
+  }
   return zip.generateAsync({ type: "uint8array" });
 }
 

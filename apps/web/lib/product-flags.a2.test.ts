@@ -20,6 +20,8 @@ describe("A2 NAS interaction flags", () => {
       aiPrefetch: false,
       domLabels: true,
       deterministicHitmap: true,
+      html5Transitions: false,
+      offlineExport: false,
     });
   });
 });

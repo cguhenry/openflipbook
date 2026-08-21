@@ -31,11 +31,14 @@ describe("PageContractOverlay", () => {
   it("never steals pointer events from the underlying image click handler", () => {
     const html = renderToStaticMarkup(<PageContractOverlay pagePlan={plan} />);
     expect(html).toContain("pointer-events-none");
+    expect(html).toContain('data-responsive-overlay="a3"');
   });
 
   it("maps anchors to responsive absolute layout classes", () => {
-    expect(textBlockClass(plan.text_blocks[0]!)).toContain("top-3");
-    expect(textBlockClass(plan.text_blocks[1]!)).toContain("bottom-3");
+    expect(textBlockClass(plan.text_blocks[0]!)).toContain("top-[clamp");
+    expect(textBlockClass(plan.text_blocks[1]!)).toContain("bottom-[clamp");
     expect(textBlockClass(plan.text_blocks[0]!)).toContain("clamp");
+    expect(textBlockClass(plan.text_blocks[0]!)).toContain("min(84%,34rem)");
+    expect(textBlockClass(plan.text_blocks[1]!)).toContain("leading-snug");
   });
 });
