@@ -113,6 +113,29 @@ def validate_page_plan_minimal(plan: dict[str, Any]) -> dict[str, Any]:
     """Apply B0 cardinality rules and then validate the repo's PagePlan model."""
     if plan.get("schema_version") != "1.0":
         raise OpenClawContractError("PagePlan schema_version must be 1.0")
+    # The prepared flipbook agent sometimes emits the same text-block data
+    # with its native aliases (content/position/headline). Normalize only
+    # those observed aliases, then keep the strict PagePlan validation below.
+    text_blocks = plan.get("text_blocks")
+    if isinstance(text_blocks, list):
+        normalized_blocks: list[Any] = []
+        for row in text_blocks:
+            if not isinstance(row, dict):
+                normalized_blocks.append(row)
+                continue
+            normalized = dict(row)
+            if "text" not in normalized and isinstance(normalized.get("content"), str):
+                normalized["text"] = normalized["content"]
+            if normalized.get("role") == "headline":
+                normalized["role"] = "title"
+            if "anchor" not in normalized and isinstance(normalized.get("position"), str):
+                anchor = normalized["position"].strip().lower().replace("_", "-")
+                normalized["anchor"] = {
+                    "top-center": "top",
+                    "bottom-center": "bottom",
+                }.get(anchor, anchor)
+            normalized_blocks.append(normalized)
+        plan = {**plan, "text_blocks": normalized_blocks}
     try:
         validated = PagePlan.model_validate(plan)
     except ValidationError as exc:

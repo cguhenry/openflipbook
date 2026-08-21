@@ -237,6 +237,51 @@ async def test_async_image_task_polls_status_without_second_generate(
 
 
 @pytest.mark.asyncio
+async def test_async_image_task_reads_completed_media_from_session_history(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _prepare(monkeypatch, tmp_path)
+    actions: list[str] = []
+    source = "/home/node/.openclaw/media/tool-image-generation/steam---task.png"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/tools/invoke":
+            body = json.loads(request.content)
+            action = str(body.get("action") or body.get("tool") or "generate")
+            actions.append(action)
+            if body.get("action") == "status":
+                return _json_response(
+                    {"ok": True, "result": {"details": {"active": False}}}
+                )
+            if body.get("tool") == "sessions_history":
+                return _json_response(
+                    {
+                        "ok": True,
+                        "result": {
+                            "details": {
+                                "messages": [
+                                    {"content": f"MEDIA:{source}"},
+                                ]
+                            }
+                        },
+                    }
+                )
+            return _json_response(
+                {"ok": True, "result": {"details": {"async": True, "task": {"taskId": "t1"}}}}
+            )
+        if request.url.params.get("meta"):
+            return _json_response({"available": True, "mediaTicket": "ticket-history"})
+        return httpx.Response(200, content=b"history-image", headers={"content-type": "image/png"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        image = await OpenClawGatewayClient(http).image_generate("draw once")
+
+    assert actions == ["image_generate", "status", "sessions_history"]
+    assert image.jpeg_bytes == b"history-image"
+    assert image.source == source
+
+
+@pytest.mark.asyncio
 async def test_gateway_error_is_not_retried(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -19,7 +19,9 @@ import asyncio
 import base64
 import binascii
 import io
+import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -42,6 +44,10 @@ DEFAULT_GATEWAY_MODEL = "openclaw/flipbook"
 DEFAULT_TEXT_MODEL = "openai/gpt-5.6-luna"
 DEFAULT_IMAGE_MODEL = "openai/gpt-image-2"
 DEFAULT_IMAGE_SIZE = "1536x1024"
+_MEDIA_PATH_RE = re.compile(
+    r"/home/node/\.openclaw/media/[A-Za-z0-9._/-]+\.(?:png|jpe?g|webp|gif)",
+    re.IGNORECASE,
+)
 
 
 class OpenClawGatewayError(RuntimeError):
@@ -228,6 +234,16 @@ def _source_candidates(value: Any) -> list[str]:
     return [item.strip() for item in found if item.strip()]
 
 
+def _history_media_candidates(value: Any) -> list[str]:
+    """Extract Gateway-managed media paths from a completion transcript."""
+
+    try:
+        serialized = json.dumps(value, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return []
+    return list(dict.fromkeys(match.group(0) for match in _MEDIA_PATH_RE.finditer(serialized)))
+
+
 def _task_present(value: Any) -> bool:
     if not isinstance(value, dict):
         return False
@@ -321,6 +337,7 @@ class OpenClawGatewayClient:
                 ],
                 "tool_choice": "none",
                 "max_output_tokens": max_output_tokens,
+                "temperature": 0,
             },
             timeout=request_timeout_s(),
         )
@@ -422,6 +439,24 @@ class OpenClawGatewayClient:
             details = result.get("details") if isinstance(result, dict) else None
             active = details.get("active") if isinstance(details, dict) else None
             if active is False:
+                history = await self._json_request(
+                    "POST",
+                    "/tools/invoke",
+                    json_body={
+                        "tool": "sessions_history",
+                        "agentId": agent_id(),
+                        "args": {
+                            "sessionKey": f"agent:{agent_id()}:main",
+                            "limit": 20,
+                            "includeTools": True,
+                        },
+                    },
+                    timeout=request_timeout_s(),
+                )
+                if history.get("ok") is True:
+                    history_sources = _history_media_candidates(history.get("result"))
+                    if history_sources:
+                        return await self._download_media(history_sources[-1])
                 raise OpenClawGatewayError("OpenClaw image task completed without assistant media")
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:

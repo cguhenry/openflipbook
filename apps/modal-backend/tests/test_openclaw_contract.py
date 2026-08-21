@@ -111,6 +111,19 @@ def test_plan_alignment_and_current_rendered_page_contract() -> None:
     assert all(row["resolved_id"] for row in resolver["centers"].values())
 
 
+def test_normalizes_flipbook_text_block_aliases() -> None:
+    aliased = json.loads(json.dumps(PLAN))
+    aliased["text_blocks"] = [
+        {"id": "t001", "role": "headline", "content": "蒸汽機如何運作", "position": "top_left"},
+        {"id": "t002", "role": "caption", "content": "蒸汽推動活塞。", "position": "bottom_center"},
+    ]
+    normalized = validate_page_plan_minimal(aliased)
+    assert normalized["text_blocks"] == [
+        {"id": "t001", "role": "title", "text": "蒸汽機如何運作", "anchor": "top-left"},
+        {"id": "t002", "role": "caption", "text": "蒸汽推動活塞。", "anchor": "bottom"},
+    ]
+
+
 def test_rejects_out_of_range_bbox() -> None:
     bad = json.loads(json.dumps(PLAN))
     bad["hotspots"][0]["desired_bbox"][0] = 1.2
