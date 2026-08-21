@@ -47,6 +47,17 @@ _SCRUB = (
     "IMAGE_API_KEY",
     "IMAGE_MODEL",
     "IMAGE_SIZE",
+    "MOCK_PROVIDERS",
+    # OpenClaw Gateway R1 live branch — keep zero-call/mock tests hermetic.
+    "FLIPBOOK_LIVE_PROVIDER",
+    "FLIPBOOK_OPENCLAW_BASE_URL",
+    "FLIPBOOK_OPENCLAW_BEARER_FILE",
+    "FLIPBOOK_OPENCLAW_AGENT",
+    "FLIPBOOK_OPENCLAW_TEXT_MODEL",
+    "FLIPBOOK_OPENCLAW_IMAGE_MODEL",
+    "FLIPBOOK_OPENCLAW_MAX_CONCURRENT",
+    "FLIPBOOK_OPENCLAW_REQUEST_TIMEOUT_S",
+    "FLIPBOOK_OPENCLAW_IMAGE_TIMEOUT_S",
     # World Mode (tap enters a place; gated off by default).
     "WORLD_MODE",
     "FAL_CONTINUE_MODEL",

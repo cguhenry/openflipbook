@@ -91,6 +91,11 @@ services:
       dockerfile: apps/modal-backend/Dockerfile
     container_name: openflipbook-backend
     restart: unless-stopped
+    # The NAS-prepared Gateway secret is intentionally mode 0600 and owned by
+    # the OpenClaw service UID; keep the backend non-root while matching it.
+    user: "1000:1000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # Keys come from the root .env (single-file demo) or, for power users, the
     # backend's own .env which overrides it. Both optional; neither clobbers
     # unset keys.
@@ -116,6 +121,19 @@ services:
       # instead of blooming neighbour subjects. Default off:
       #   EXPAND_MAP_PAN=true docker compose up -d backend
       EXPAND_MAP_PAN: ${EXPAND_MAP_PAN:-false}
+      # R1 live provider: planner/alignment use the OpenClaw Responses route;
+      # image generation uses the flipbook agent's image_generate tool.
+      FLIPBOOK_LIVE_PROVIDER: "openclaw"
+      FLIPBOOK_OPENCLAW_BASE_URL: "http://host.docker.internal:18789"
+      FLIPBOOK_OPENCLAW_BEARER_FILE: "/run/secrets/openclaw_gateway_secret"
+      FLIPBOOK_OPENCLAW_AGENT: "flipbook"
+      FLIPBOOK_OPENCLAW_TEXT_MODEL: "openai/gpt-5.6-luna"
+      FLIPBOOK_OPENCLAW_IMAGE_MODEL: "openai/gpt-image-2"
+      FLIPBOOK_OPENCLAW_MAX_CONCURRENT: "1"
+      FLIPBOOK_OPENCLAW_REQUEST_TIMEOUT_S: "90"
+      FLIPBOOK_OPENCLAW_IMAGE_TIMEOUT_S: "180"
+    volumes:
+      - /volume1/docker/openclaw/openclaw-data/workspace/projects/_runtime-secrets/openflipbook-nas/openclaw-gateway-secret:/run/secrets/openclaw_gateway_secret:ro
     # Force public resolvers — Docker's default 127.0.0.11 link-local resolver
     # has been flaking on the fal.ai / r2.cloudflarestorage.com hosts during
     # E2E runs (sporadic ESERVFAIL / EAI_AGAIN), which manifests as

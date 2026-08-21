@@ -25,7 +25,7 @@ from _env import env_flag
 from obs import log
 from providers import image as image_provider
 from providers import image_edit as image_edit_provider
-from providers import llm, model_router, spend
+from providers import llm, model_router, openclaw_runtime, spend
 
 if TYPE_CHECKING:
     from generate import GenerateBody, WorldContextEntity
@@ -106,6 +106,7 @@ async def stream_tap(
     _vlm_grounding_repair_on: Callable[[], bool],
     _run_grounding: Callable[..., Awaitable[tuple[Any, dict[str, Any] | None]]],
 ) -> AsyncIterator[bytes]:
+    openclaw_live = openclaw_runtime.enabled()
     # 1. Resolve click → subject phrase + style anchor (style is empty for
     #    text-only queries; only set on tap mode). When the client has
     #    already prefetched on hover, skip the VLM round-trip entirely.
@@ -361,6 +362,7 @@ async def stream_tap(
         plan.facts
         and render_mode != "place_scene"
         and not body.suppress_map_labels
+        and not openclaw_live
     ):
         composed_prompt += "\n\nLabels to include:\n- " + "\n- ".join(plan.facts)
     if body.suppress_map_labels and render_mode != "place_scene":
@@ -373,9 +375,15 @@ async def stream_tap(
     # prompt before any image dollars are spent — a public deployment's
     # opt-in. Fail-open inside (providers/moderation.py); a block is a
     # clean error frame, not a 500.
-    from providers import moderation
+    if openclaw_live:
+        # R1's live budget is planner + image + alignment.  Moderation is an
+        # optional legacy provider call, so the Gateway branch intentionally
+        # leaves it out of this bounded path.
+        blocked, block_reason = False, None
+    else:
+        from providers import moderation
 
-    blocked, block_reason = await moderation.flagged(composed_prompt)
+        blocked, block_reason = await moderation.flagged(composed_prompt)
     if blocked:
         yield _sse(
             {"type": "error", "message": f"Blocked by moderation: {block_reason}"},
@@ -506,6 +514,15 @@ async def stream_tap(
         and env_flag("ENTER_EDIT_REF", "true")
         and enter_source is not None
     )
+    if openclaw_live and (use_continuation or use_enter_edit):
+        yield _sse(
+            {
+                "type": "error",
+                "message": "OpenClaw live runtime supports root generation only in R1",
+            },
+            trace_id,
+        )
+        return
     # The Kontext zoom keeps the crop's LOOK faithful; feed it the system's
     # KNOWLEDGE too — the planner's named sub-areas (plan.facts) + the
     # geometry placement clause — so it ELABORATES the place in finer detail
@@ -1084,7 +1101,12 @@ async def stream_tap(
     # against bins projected for a different camera would actively fight
     # the deliberate view (V1 must-fix 5).
     grounding_summary: dict | None = None
-    if _vlm_grounding_on() and body.expected_layout and not layout_suppressed:
+    if (
+        not openclaw_live
+        and _vlm_grounding_on()
+        and body.expected_layout
+        and not layout_suppressed
+    ):
         await _abort_if_disconnected("pre-grounding")
         yield _sse(
             {
@@ -1111,8 +1133,34 @@ async def stream_tap(
         image_provider.encode_data_url, result.jpeg_bytes, result.mime_type
     )
 
+    openclaw_rendered: dict[str, Any] | None = None
+    if openclaw_live and plan.page_contract is not None:
+        aligned = await openclaw_runtime.OpenClawGatewayClient().align_hotspots(
+            plan.page_contract,
+            data_url,
+        )
+        from providers.openclaw_contract import build_rendered_page
+
+        image_width, image_height = openclaw_runtime.image_dimensions(result.jpeg_bytes)
+        openclaw_rendered = build_rendered_page(
+            plan.page_contract,
+            aligned,
+            image_path=result.provider_request_id or "openclaw://assistant-media",
+            image_width=image_width,
+            image_height=image_height,
+            image_provider="openclaw",
+            image_model=result.model,
+            planner_model=plan.planner_model or openclaw_runtime.text_model(),
+            aligner_model=openclaw_runtime.text_model(),
+            node_id=f"openclaw_{body.session_id}",
+        )
+
     # 4. Final event. Matches GenerateFinalEvent in packages/config.
-    text_model = llm._text_model(online=effective_web_search)
+    text_model = (
+        openclaw_runtime.text_model()
+        if openclaw_live
+        else llm._text_model(online=effective_web_search)
+    )
     sources_payload = [
         {"url": c.url, "title": c.title}
         for c in (plan.sources or [])
@@ -1136,6 +1184,9 @@ async def stream_tap(
             body.session_id, result.model, images=billed_images
         ),
     }
+    if openclaw_rendered is not None:
+        final_payload["page_plan"] = openclaw_rendered["page_plan"]
+        final_payload["aligned_hotspots"] = openclaw_rendered["hotspots"]
     if env_flag("MOCK_PROVIDERS"):
         # A2's complete contract is deterministic and zero-cost. Live mode
         # stays legacy-only until B0 proves planner + image alignment.

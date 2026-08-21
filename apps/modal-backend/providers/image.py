@@ -248,6 +248,10 @@ def _image_provider() -> str:
 def active_provider() -> str:
     """Public accessor so callers (e.g. generate.py) can gate fal-only paths
     such as the draft/final tier race without reaching into a private."""
+    from providers import openclaw_runtime
+
+    if openclaw_runtime.enabled():
+        return "openclaw"
     return _image_provider()
 
 
@@ -352,11 +356,28 @@ async def generate_image(
 ) -> GeneratedImage:
     from _env import env_flag
     from obs import log, span
-    from providers import breaker, mock, model_router
+    from providers import breaker, mock, model_router, openclaw_runtime
 
     if mock.on():
         m = mock.mock_image(prompt, op="fresh", aspect_ratio=aspect_ratio)
         return GeneratedImage(m.jpeg_bytes, m.mime_type, m.model, m.request_id)
+    if openclaw_runtime.enabled():
+        async with span(
+            "image.generate",
+            model=openclaw_runtime.image_model(),
+            prompt_len=len(prompt),
+            provider="openclaw",
+        ) as ctx:
+            openclaw_generated = await openclaw_runtime.OpenClawGatewayClient().image_generate(
+                prompt
+            )
+            ctx["bytes"] = len(openclaw_generated.jpeg_bytes)
+        return GeneratedImage(
+            openclaw_generated.jpeg_bytes,
+            openclaw_generated.mime_type,
+            openclaw_runtime.image_model(),
+            openclaw_generated.source,
+        )
     if _image_provider() != "fal":
         # Reference conditioning is fal/nano-banana only — other providers stay
         # text-only (refs ignored). Custom IMAGE_PROVIDER deployments sit

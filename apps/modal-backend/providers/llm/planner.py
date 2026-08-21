@@ -35,6 +35,8 @@ class PagePlan:
     prompt: str
     facts: list[str]
     sources: list[Citation]
+    page_contract: dict[str, Any] | None = None
+    planner_model: str | None = None
 
 
 PLAN_SCHEMA: dict[str, Any] = {
@@ -277,6 +279,60 @@ async def plan_page(
     if style_anchor:
         user += f"\n\nVisual style to preserve verbatim: {style_anchor}"
     from obs import span
+    from providers import openclaw_runtime
+
+    if openclaw_runtime.enabled():
+        contract_clause = (
+            "For this OpenClaw Gateway request, the following Page Contract v1.0 "
+            "supersedes the legacy page_title/prompt/facts shape above. Return "
+            "exactly one JSON object with schema_version '1.0', title, summary, "
+            "scene, text_blocks, hotspots, motion_hints, and sources. The scene "
+            "must use aspect_ratio '16:9' and its prompt must explicitly contain "
+            "'no text'. Return exactly two text_blocks with ids t001 and t002, "
+            "and exactly three hotspots with ids h001, h002, and h003. Each "
+            "hotspot needs label, sub_query, visual_target, and a normalized "
+            "desired_bbox [x,y,width,height]. Use valid Page Contract enum values. "
+            "The text_blocks are interface overlays, so do not ask the image "
+            "renderer to draw their text. sources may be an empty list. Return "
+            "only the JSON object, with no markdown or prose."
+        )
+        contract_system = f"{system} {contract_clause}"
+        contract_user = (
+            f"{user}\n\nThe output must satisfy the exact Page Contract cardinalities "
+            "and ids stated above."
+        )
+        text_model = openclaw_runtime.text_model()
+        async with span(
+            "planner.plan_page",
+            model=text_model,
+            provider="openclaw",
+            web_search=web_search,
+        ):
+            validated = await openclaw_runtime.OpenClawGatewayClient().page_plan(
+                contract_system,
+                contract_user,
+            )
+        text_blocks = validated.get("text_blocks") or []
+        contract_facts = [
+            str(block.get("text")).strip()
+            for block in text_blocks
+            if isinstance(block, dict) and str(block.get("text") or "").strip()
+        ]
+        source_rows = validated.get("sources") or []
+        contract_sources = [
+            Citation(url=str(source["url"]), title=str(source["title"]))
+            for source in source_rows
+            if isinstance(source, dict) and source.get("url") and source.get("title")
+        ]
+        scene = validated["scene"]
+        return PagePlan(
+            page_title=str(validated["title"]),
+            prompt=str(scene["prompt"]),
+            facts=contract_facts,
+            sources=contract_sources,
+            page_contract=validated,
+            planner_model=text_model,
+        )
 
     text_model = _text_model(online=web_search)
     response_sink: list[Any] = []

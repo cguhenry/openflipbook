@@ -114,6 +114,13 @@ def _resolve_provider() -> tuple[str, str, str, dict[str, str]]:
     return provider, base_url, api_key, {}
 
 
+def _openclaw_live() -> bool:
+    return (
+        os.environ.get("FLIPBOOK_LIVE_PROVIDER", "").strip().lower() == "openclaw"
+        and not env_flag("MOCK_PROVIDERS")
+    )
+
+
 def _client() -> AsyncOpenAI:
     """Module-level singleton AsyncOpenAI client.
 
@@ -127,6 +134,11 @@ def _client() -> AsyncOpenAI:
         # MOCK_PROVIDERS: ONE seam covers every text/VLM/judge call (the
         # judges borrow this client too) — zero keys, zero network.
         return mock.mock_llm_client()  # type: ignore[return-value]
+    if _openclaw_live():
+        raise RuntimeError(
+            "OpenClaw live runtime must use the Gateway Responses adapter; "
+            "legacy LLM provider fallback is disabled"
+        )
     global _OPENAI_CLIENT
     if _OPENAI_CLIENT is None:
         provider, base_url, api_key, headers = _resolve_provider()
@@ -225,6 +237,8 @@ def _log_cache_usage(span_ctx: dict[str, Any], response: Any) -> None:
 def _vlm_model() -> str:
     # LLM_VLM_MODEL (provider-native slug) wins; OPENROUTER_VLM_MODEL is the
     # back-compat path; then the built-in default.
+    if _openclaw_live():
+        return os.environ.get("FLIPBOOK_OPENCLAW_TEXT_MODEL", "openai/gpt-5.6-luna")
     return (
         os.environ.get("LLM_VLM_MODEL")
         or os.environ.get("OPENROUTER_VLM_MODEL")
@@ -308,6 +322,8 @@ def _maybe_response_format(model: str) -> dict[str, Any]:
 
 
 def _text_model(online: bool) -> str:
+    if _openclaw_live():
+        return os.environ.get("FLIPBOOK_OPENCLAW_TEXT_MODEL", "openai/gpt-5.6-luna")
     base = (
         os.environ.get("LLM_TEXT_MODEL")
         or os.environ.get("OPENROUTER_TEXT_MODEL")
