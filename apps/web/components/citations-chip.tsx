@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Citation } from "@openflipbook/config";
+import type { Citation, SourceRefV1 } from "@openflipbook/config";
+import { safeExternalUrl } from "@/lib/citation-utils";
 
 interface CitationsChipProps {
-  sources: Citation[];
+  sources: Array<Citation | SourceRefV1>;
 }
 
 export default function CitationsChip({ sources }: CitationsChipProps) {
@@ -47,7 +48,7 @@ export default function CitationsChip({ sources }: CitationsChipProps) {
         className="flex items-center gap-1 rounded-full border border-[var(--color-ink)]/30 bg-[var(--color-paper)]/80 px-2.5 py-1 text-xs font-medium text-[var(--color-ink)] backdrop-blur transition hover:bg-[var(--color-paper)]"
       >
         <span aria-hidden>📎</span>
-        <span>{sources.length}</span>
+        <span>Sources ({sources.length})</span>
       </button>
       {open && (
         <div className="absolute end-0 bottom-[calc(100%+0.5rem)] w-72 max-w-[80vw] rounded-xl border border-[var(--color-ink)]/20 bg-[var(--color-paper)] p-2 text-xs shadow-lg">
@@ -55,19 +56,26 @@ export default function CitationsChip({ sources }: CitationsChipProps) {
           <ul className="flex flex-col gap-1">
             {sources.map((s, i) => {
               const host = safeHost(s.url);
+              const href = safeExternalUrl(s.url);
               return (
                 <li key={`${s.url}-${i}`}>
                   <a
-                    href={s.url}
+                    href={href ?? "#"}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block rounded-md px-2 py-1.5 hover:bg-[var(--color-ink)]/5"
+                    onClick={(event) => {
+                      if (!href) event.preventDefault();
+                    }}
                   >
                     <div className="line-clamp-2 font-medium">
                       {s.title || host || s.url}
                     </div>
                     {host && (
                       <div className="mt-0.5 truncate opacity-60">{host}</div>
+                    )}
+                    {s.snippet && (
+                      <div className="mt-1 line-clamp-3 opacity-75">{s.snippet}</div>
                     )}
                   </a>
                 </li>

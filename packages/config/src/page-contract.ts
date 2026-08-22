@@ -7,6 +7,8 @@ export type NormBBox = readonly [number, number, number, number];
 export type NormPoint = readonly [number, number];
 
 export interface SourceRefV1 {
+  /** Stable local grounding id (S1..S5); optional for legacy pages. */
+  id?: string;
   title: string;
   url: string;
   snippet: string;
@@ -31,6 +33,8 @@ export interface TextBlockV1 {
   role: TextRoleV1;
   text: string;
   anchor: TextAnchorV1;
+  /** Local source ids only; URLs live in PagePlanV1.sources. */
+  source_ids?: string[];
 }
 
 export interface PlannedHotspotV1 {

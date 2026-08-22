@@ -132,6 +132,7 @@ services:
       FLIPBOOK_OPENCLAW_MAX_CONCURRENT: "1"
       FLIPBOOK_OPENCLAW_REQUEST_TIMEOUT_S: "90"
       FLIPBOOK_OPENCLAW_IMAGE_TIMEOUT_S: "180"
+      FLIPBOOK_SEARXNG_BASE_URL: ${FLIPBOOK_SEARXNG_BASE_URL:-http://host.docker.internal:8081}
     volumes:
       - /volume1/docker/openclaw/openclaw-data/workspace/projects/_runtime-secrets/openflipbook-nas/openclaw-gateway-secret:/run/secrets/openclaw_gateway_secret:ro
     # Force public resolvers — Docker's default 127.0.0.11 link-local resolver

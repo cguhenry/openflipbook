@@ -13,6 +13,7 @@ import {
   type PortableExportNode,
   type WorldExportNode,
 } from "./export-build";
+import { buildPortableBook } from "./portable-book";
 
 // A minimal valid JPEG (1x1, generated once with jpeg-js) — enough for the
 // zip entries; the PDF test needs real JPEG structure, which this is.
@@ -43,6 +44,34 @@ describe("sampleEvenly", () => {
     expect(sampled[0]).toBe(0);
     expect(sampled[sampled.length - 1]).toBe(39);
     expect(sampleEvenly(0, 16)).toEqual([]);
+  });
+});
+
+describe("portable source contract", () => {
+  it("keeps page sources and text block source ids in the offline manifest", () => {
+    const book = buildPortableBook([
+      {
+        id: "root",
+        session_id: "session_test",
+        parent_id: null,
+        query: "root",
+        page_title: "Root",
+        image_asset: "images/root.jpg",
+        sources: [{ id: "S1", title: "Reference", url: "https://example.com", snippet: "A snippet" }],
+        page_plan: {
+          schema_version: "1.0",
+          title: "Root",
+          summary: "summary",
+          scene: { prompt: "an illustration, no text", style: "textbook", aspect_ratio: "16:9" },
+          text_blocks: [{ id: "t001", role: "body", text: "Fact", anchor: "bottom", source_ids: ["S1"] }],
+          hotspots: [],
+          motion_hints: [],
+          sources: [{ id: "S1", title: "Reference", url: "https://example.com", snippet: "A snippet" }],
+        },
+      },
+    ]);
+    expect(book.nodes[0]!.sources[0]).toMatchObject({ id: "S1", url: "https://example.com" });
+    expect(book.nodes[0]!.text_blocks[0]!.source_ids).toEqual(["S1"]);
   });
 });
 

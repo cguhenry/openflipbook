@@ -58,6 +58,7 @@ _SCRUB = (
     "FLIPBOOK_OPENCLAW_MAX_CONCURRENT",
     "FLIPBOOK_OPENCLAW_REQUEST_TIMEOUT_S",
     "FLIPBOOK_OPENCLAW_IMAGE_TIMEOUT_S",
+    "FLIPBOOK_SEARXNG_BASE_URL",
     # World Mode (tap enters a place; gated off by default).
     "WORLD_MODE",
     "FAL_CONTINUE_MODEL",

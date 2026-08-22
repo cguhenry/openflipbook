@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from providers import llm as _llm
+from providers.searxng_grounding import GroundingSource
 
 from .client import (
     _log_cache_usage,
@@ -27,6 +28,9 @@ from .client import (
 class Citation:
     url: str
     title: str | None = None
+    id: str | None = None
+    snippet: str = ""
+    engine: str | None = None
 
 
 @dataclass
@@ -155,6 +159,7 @@ async def plan_page(
     render_mode: str | None = None,
     surroundings: str | None = None,
     label_free: bool = False,
+    grounded_sources: list[GroundingSource] | None = None,
 ) -> PagePlan:
     """Produce a page title, image-gen prompt, and factual snippets for the query.
 
@@ -232,6 +237,10 @@ async def plan_page(
     world_clause = _format_world_context_clause(world_context)
     if world_clause:
         system_parts.append(world_clause)
+    if grounded_sources is not None:
+        from providers.grounded_contract import grounded_planner_instruction
+
+        system_parts.append(grounded_planner_instruction(query, grounded_sources))
     system = " ".join(system_parts)
     # Web-search benefits hugely from a parent-anchored query. "Memory Bank"
     # alone hits Cursor docs; "Memory Bank SAM 2 video segmentation" lands
@@ -298,7 +307,9 @@ async def plan_page(
             "hotspot needs label, sub_query, visual_target, and a normalized "
             "desired_bbox [x,y,width,height]. Use valid Page Contract enum values. "
             "The text_blocks are interface overlays, so do not ask the image "
-            "renderer to draw their text. sources may be an empty list. Return "
+            "renderer to draw their text. When grounded sources are supplied, "
+            "cite factual text with source_ids using only those local ids; "
+            "sources may be an empty list. Return "
             "only the JSON object, with no markdown or prose."
         )
         contract_system = f"{system} {contract_clause}"
@@ -316,7 +327,15 @@ async def plan_page(
             validated = await openclaw_runtime.OpenClawGatewayClient().page_plan(
                 contract_system,
                 contract_user,
+                grounded_sources=grounded_sources,
             )
+        if grounded_sources is not None:
+            from providers.grounded_contract import inject_canonical_sources
+
+            validated = inject_canonical_sources(validated, grounded_sources)
+            # Re-run the contract after local canonical injection so persisted
+            # pages contain only ids/URLs accepted by the current schema.
+            validated = openclaw_runtime.validate_page_plan_minimal(validated)
         text_blocks = validated.get("text_blocks") or []
         contract_facts = [
             str(block.get("text")).strip()
@@ -325,7 +344,12 @@ async def plan_page(
         ]
         source_rows = validated.get("sources") or []
         contract_sources = [
-            Citation(url=str(source["url"]), title=str(source["title"]))
+            Citation(
+                id=str(source.get("id")) if source.get("id") else None,
+                url=str(source["url"]),
+                title=str(source["title"]),
+                snippet=str(source.get("snippet") or ""),
+            )
             for source in source_rows
             if isinstance(source, dict) and source.get("url") and source.get("title")
         ]

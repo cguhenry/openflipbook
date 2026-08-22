@@ -136,6 +136,28 @@ def validate_page_plan_minimal(plan: dict[str, Any]) -> dict[str, Any]:
                 }.get(anchor, anchor)
             normalized_blocks.append(normalized)
         plan = {**plan, "text_blocks": normalized_blocks}
+    # Motion hints are optional presentation metadata.  The prepared flipbook
+    # agent has emitted native ``type/target/description`` flow hints in this
+    # slot; discard rows that are not PagePlan v1 hints so they cannot block a
+    # usable grounded page before image generation.
+    motion_hints = plan.get("motion_hints")
+    if isinstance(motion_hints, list):
+        valid_effects = {
+            "none",
+            "pulse",
+            "drift-up",
+            "rotate",
+            "parallax",
+            "ken-burns",
+            "glow",
+        }
+        normalized_hints = [
+            row
+            for row in motion_hints
+            if isinstance(row, dict) and row.get("effect") in valid_effects
+        ]
+        if len(normalized_hints) != len(motion_hints):
+            plan = {**plan, "motion_hints": normalized_hints}
     try:
         validated = PagePlan.model_validate(plan)
     except ValidationError as exc:

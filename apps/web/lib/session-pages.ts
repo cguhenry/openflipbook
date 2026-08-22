@@ -49,7 +49,13 @@ export interface SessionNodeWire {
   page_title: string;
   image_url: string;
   click_in_parent: { x_pct: number; y_pct: number } | null;
-  sources?: { url: string; title: string | null }[] | null;
+  sources?: {
+    id?: string;
+    url: string;
+    title: string | null;
+    snippet?: string;
+    engine?: string | null;
+  }[] | null;
   scene_view?: SceneView | null;
   geo_extracted?: boolean;
   // Optional for back-compat with servers that predate the field; the node

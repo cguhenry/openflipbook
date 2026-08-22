@@ -15,6 +15,9 @@ def _unit(v: float) -> float:
 
 
 class SourceRef(BaseModel):
+    # Stable local grounding id (for example S1). Optional for persisted
+    # pre-B2 pages so old Mongo documents remain valid.
+    id: str | None = Field(default=None, pattern=r"^S[0-9]{1,3}$")
     title: str = Field(min_length=1, max_length=300)
     url: str = Field(min_length=1, max_length=2000)
     snippet: str = Field(default="", max_length=1200)
@@ -42,6 +45,9 @@ class TextBlock(BaseModel):
         "top-left", "top", "top-right", "left", "center", "right",
         "bottom-left", "bottom", "bottom-right",
     ] = "top-left"
+    # Source ids are local references only; canonical URLs/snippets are
+    # injected server-side from normalized SearXNG results.
+    source_ids: list[str] = Field(default_factory=list, max_length=5)
 
 
 class PlannedHotspot(BaseModel):

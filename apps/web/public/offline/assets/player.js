@@ -20,6 +20,9 @@
   var forward = document.getElementById("forward");
   var status = document.getElementById("status");
   var surface = document.getElementById("page-surface");
+  var sourcesToggle = document.getElementById("sources-toggle");
+  var sourcesPanel = document.getElementById("sources-panel");
+  var sourcesList = document.getElementById("sources-list");
 
   function reducedMotion() {
     return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -122,6 +125,21 @@
     return "anchor-" + String(anchor || "bottom-left").replace(/[^a-z-]/g, "");
   }
 
+  function sourceId(source, index) {
+    return source && source.id ? String(source.id) : "S" + (index + 1);
+  }
+
+  function safeExternalUrl(raw) {
+    try {
+      var parsed = new URL(String(raw || ""));
+      return parsed.protocol === "http:" || parsed.protocol === "https:"
+        ? parsed.href
+        : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   function renderText(node) {
     textLayer.replaceChildren();
     (node.text_blocks || []).forEach(function (block) {
@@ -132,7 +150,57 @@
       var span = document.createElement("span");
       span.textContent = block.text || "";
       div.appendChild(span);
+      var ids = Array.isArray(block.source_ids) ? block.source_ids : [];
+      var sources = Array.isArray(node.sources) ? node.sources : [];
+      ids.forEach(function (id) {
+        var index = sources.findIndex(function (source, sourceIndex) {
+          return sourceId(source, sourceIndex) === String(id);
+        });
+        if (index < 0) return;
+        var marker = document.createElement("sup");
+        marker.className = "source-marker";
+        marker.dataset.sourceId = String(id);
+        marker.textContent = "[" + (index + 1) + "]";
+        marker.setAttribute("aria-label", "Source " + (index + 1));
+        span.appendChild(marker);
+      });
       textLayer.appendChild(div);
+    });
+  }
+
+  function renderSources(node) {
+    var sources = Array.isArray(node.sources) ? node.sources : [];
+    sourcesList.replaceChildren();
+    if (!sources.length) {
+      sourcesToggle.hidden = true;
+      sourcesPanel.hidden = true;
+      sourcesToggle.setAttribute("aria-expanded", "false");
+      return;
+    }
+    sourcesToggle.hidden = false;
+    sourcesToggle.textContent = "Sources (" + sources.length + ")";
+    sources.forEach(function (source, index) {
+      var item = document.createElement("li");
+      var href = safeExternalUrl(source.url);
+      var title = source.title || source.url || sourceId(source, index);
+      if (href) {
+        var link = document.createElement("a");
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = title;
+        item.appendChild(link);
+      } else {
+        var label = document.createElement("span");
+        label.textContent = title;
+        item.appendChild(label);
+      }
+      if (source.snippet) {
+        var snippet = document.createElement("p");
+        snippet.textContent = source.snippet;
+        item.appendChild(snippet);
+      }
+      sourcesList.appendChild(item);
     });
   }
 
@@ -148,6 +216,7 @@
     }
     image.alt = "Illustration: " + (node.title || node.query || "");
     renderText(node);
+    renderSources(node);
     select.value = node.id;
     status.textContent = node.title || node.query || "";
     back.disabled = trailIndex <= 0;
@@ -196,6 +265,12 @@
     });
   });
 
+  sourcesToggle.addEventListener("click", function () {
+    var open = sourcesPanel.hidden;
+    sourcesPanel.hidden = !open;
+    sourcesToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+
   image.addEventListener("error", function () {
     image.classList.add("is-missing");
     status.textContent = "此頁的圖片資產無法讀取";
@@ -227,6 +302,7 @@
   window.__OPENFLIPBOOK_OFFLINE__ = {
     resolveHotspot: resolveHotspot,
     containRect: containRect,
+    safeExternalUrl: safeExternalUrl,
   };
   render();
 })();

@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -353,6 +354,7 @@ async def generate_image(
     tier: str | None = None,
     model_override: str | None = None,
     reference_urls: list[str] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> GeneratedImage:
     from _env import env_flag
     from obs import log, span
@@ -369,7 +371,8 @@ async def generate_image(
             provider="openclaw",
         ) as ctx:
             openclaw_generated = await openclaw_runtime.OpenClawGatewayClient().image_generate(
-                prompt
+                prompt,
+                is_cancelled=cancel_check,
             )
             ctx["bytes"] = len(openclaw_generated.jpeg_bytes)
         return GeneratedImage(

@@ -343,12 +343,36 @@ class OpenClawGatewayClient:
         )
         return _response_text(payload)
 
+    async def authenticated_health(self) -> dict[str, Any]:
+        """Non-generating authenticated Gateway preflight."""
+
+        try:
+            response = await self._request(
+                "GET", "/health", timeout=request_timeout_s()
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise OpenClawGatewayError("OpenClaw Gateway health preflight failed") from exc
+        if not isinstance(payload, dict):
+            raise OpenClawGatewayError("OpenClaw Gateway health payload was not an object")
+        return payload
+
     async def page_plan(
         self,
         system_prompt: str,
         user_prompt: str,
+        *,
+        grounded_sources: list[Any] | None = None,
     ) -> dict[str, Any]:
         raw = await self.responses_json(system_prompt, user_prompt)
+        if grounded_sources is not None:
+            # Source metadata is server-owned.  Inject it before validation so
+            # a model that returns only local ids/URLs cannot fail the request
+            # by omitting canonical title/snippet fields.
+            from providers.grounded_contract import inject_canonical_sources
+
+            raw = inject_canonical_sources(raw, grounded_sources)
         try:
             return validate_page_plan_minimal(raw)
         except OpenClawContractError as exc:
@@ -388,7 +412,14 @@ class OpenClawGatewayClient:
         except OpenClawContractError as exc:
             raise OpenClawGatewayError(f"OpenClaw hotspot alignment failed: {exc}") from exc
 
-    async def image_generate(self, prompt: str) -> OpenClawImage:
+    async def image_generate(
+        self,
+        prompt: str,
+        *,
+        is_cancelled: Any = None,
+    ) -> OpenClawImage:
+        if is_cancelled is not None and is_cancelled():
+            raise asyncio.CancelledError()
         payload = await self._json_request(
             "POST",
             "/tools/invoke",
@@ -411,14 +442,20 @@ class OpenClawGatewayClient:
         result = payload.get("result")
         source = _source_candidates(result)
         if source:
+            if is_cancelled is not None and is_cancelled():
+                raise asyncio.CancelledError()
             return await self._download_media(source[0])
         if not _task_present(result):
             raise OpenClawGatewayError("OpenClaw image_generate returned no media or task")
-        return await self._poll_image_task()
+        return await self._poll_image_task(is_cancelled=is_cancelled)
 
-    async def _poll_image_task(self) -> OpenClawImage:
+    async def _poll_image_task(self, *, is_cancelled: Any = None) -> OpenClawImage:
         deadline = asyncio.get_running_loop().time() + image_timeout_s()
         while True:
+            if is_cancelled is not None and is_cancelled():
+                # OpenClaw image_generate has no cancel action. Stop polling;
+                # any provider-side background task is intentionally ignored.
+                raise asyncio.CancelledError()
             payload = await self._json_request(
                 "POST",
                 "/tools/invoke",
@@ -435,6 +472,8 @@ class OpenClawGatewayClient:
             result = payload.get("result")
             source = _source_candidates(result)
             if source:
+                if is_cancelled is not None and is_cancelled():
+                    raise asyncio.CancelledError()
                 return await self._download_media(source[0])
             details = result.get("details") if isinstance(result, dict) else None
             active = details.get("active") if isinstance(details, dict) else None

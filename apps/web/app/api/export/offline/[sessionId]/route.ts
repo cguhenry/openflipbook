@@ -127,6 +127,7 @@ export async function GET(_req: Request, { params }: Params) {
       image_asset: imageAsset(index, row.id, stored, row.image_key),
       aspect_ratio: row.aspect_ratio,
       click_in_parent: row.click_in_parent,
+      sources: row.sources,
       page_plan: row.page_plan,
       aligned_hotspots: row.aligned_hotspots,
       created_at: row.created_at,

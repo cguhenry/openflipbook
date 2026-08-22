@@ -26,6 +26,7 @@ from obs import log
 from providers import image as image_provider
 from providers import image_edit as image_edit_provider
 from providers import llm, model_router, openclaw_runtime, spend
+from providers.searxng_grounding import GroundingSource, SearxngClient, configured_base_url
 
 if TYPE_CHECKING:
     from generate import GenerateBody, WorldContextEntity
@@ -105,6 +106,7 @@ async def stream_tap(
     _vlm_grounding_on: Callable[[], bool],
     _vlm_grounding_repair_on: Callable[[], bool],
     _run_grounding: Callable[..., Awaitable[tuple[Any, dict[str, Any] | None]]],
+    _is_cancelled: Callable[[], bool] | None = None,
 ) -> AsyncIterator[bytes]:
     openclaw_live = openclaw_runtime.enabled()
     # 1. Resolve click → subject phrase + style anchor (style is empty for
@@ -315,7 +317,54 @@ async def stream_tap(
     if session_lock:
         style_anchor = session_lock
 
-    # 2. Plan (with optional style anchor for visual continuity, and
+    # 2. Ground the live Page Contract with exactly one local snippet search.
+    # Result pages are never fetched; the normalized local source list is the
+    # only source data the planner can see and the contract adapter overwrites
+    # any model-produced URL/snippet before persistence.
+    grounding_sources: list[GroundingSource] | None = [] if openclaw_live else None
+    grounding_warning: str | None = None
+    if openclaw_live and effective_web_search:
+        await _abort_if_disconnected("pre-search")
+        yield _sse({"type": "status", "stage": "searching"}, trace_id)
+        base_url = configured_base_url()
+        if not base_url:
+            grounding_warning = "SearXNG grounding is unavailable; continuing without sources."
+        else:
+            client = SearxngClient(base_url)
+            try:
+                search_query = " ".join(
+                    part
+                    for part in (
+                        effective_query,
+                        body.parent_title or body.parent_query or "",
+                    )
+                    if part and part.strip()
+                )[:600]
+                grounding_sources = await client.search(search_query)
+                if not grounding_sources:
+                    grounding_warning = "SearXNG returned no normalized sources."
+            except _asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                grounding_sources = []
+                grounding_warning = (
+                    f"SearXNG grounding unavailable ({type(exc).__name__}); "
+                    "continuing without sources."
+                )
+            finally:
+                await client.aclose()
+        if grounding_warning:
+            yield _sse(
+                {
+                    "type": "status",
+                    "stage": "grounding_warning",
+                    "message": grounding_warning,
+                },
+                trace_id,
+            )
+        await _abort_if_disconnected("post-search")
+
+    # 3. Plan (with optional style anchor for visual continuity, and
     #    parent + subject_context for semantic continuity — keeps an
     #    ambiguous click subject in the parent page's domain instead of
     #    drifting to whatever interpretation web search likes most).
@@ -343,7 +392,9 @@ async def stream_tap(
         render_mode=render_mode or "explainer",
         surroundings=surroundings_for_plan,
         label_free=body.suppress_map_labels,
+        grounded_sources=grounding_sources,
     )
+    await _abort_if_disconnected("post-plan")
 
     composed_prompt = plan.prompt
     if style_anchor:
@@ -1019,6 +1070,7 @@ async def stream_tap(
                 tier=body.image_tier,
                 model_override=body.image_model,
                 reference_urls=cond_refs,
+                cancel_check=_is_cancelled,
             )
         )
     # Drive both tasks to completion. If the draft finishes first, emit
@@ -1132,13 +1184,17 @@ async def stream_tap(
     data_url = await _asyncio.to_thread(
         image_provider.encode_data_url, result.jpeg_bytes, result.mime_type
     )
+    await _abort_if_disconnected("post-image")
 
     openclaw_rendered: dict[str, Any] | None = None
     if openclaw_live and plan.page_contract is not None:
+        yield _sse({"type": "status", "stage": "aligning"}, trace_id)
+        await _abort_if_disconnected("pre-alignment")
         aligned = await openclaw_runtime.OpenClawGatewayClient().align_hotspots(
             plan.page_contract,
             data_url,
         )
+        await _abort_if_disconnected("post-alignment")
         from providers.openclaw_contract import build_rendered_page
 
         image_width, image_height = openclaw_runtime.image_dimensions(result.jpeg_bytes)
@@ -1161,10 +1217,17 @@ async def stream_tap(
         if openclaw_live
         else llm._text_model(online=effective_web_search)
     )
-    sources_payload = [
-        {"url": c.url, "title": c.title}
-        for c in (plan.sources or [])
-    ]
+    await _abort_if_disconnected("pre-final")
+    sources_payload: list[dict[str, Any]] = []
+    for citation in plan.sources or []:
+        item: dict[str, Any] = {"url": citation.url, "title": citation.title}
+        if citation.id:
+            item["id"] = citation.id
+        if citation.snippet:
+            item["snippet"] = citation.snippet
+        if citation.engine:
+            item["engine"] = citation.engine
+        sources_payload.append(item)
     final_payload: dict[str, Any] = {
         "type": "final",
         "image_data_url": data_url,
@@ -1180,10 +1243,13 @@ async def stream_tap(
             else composed_prompt
         ),
         "sources": sources_payload,
+        "generation_id": body.generation_id,
         "session_spend_estimate": spend.record_generation(
             body.session_id, result.model, images=billed_images
         ),
     }
+    if grounding_warning:
+        final_payload["grounding_warning"] = grounding_warning
     if openclaw_rendered is not None:
         final_payload["page_plan"] = openclaw_rendered["page_plan"]
         final_payload["aligned_hotspots"] = openclaw_rendered["hotspots"]
@@ -1240,6 +1306,9 @@ async def stream_tap(
         # bins were projected for a different camera register — the debug
         # HUD counts these so suppression frequency is finally observable.
         final_payload["layout_suppressed"] = True
+    if openclaw_live:
+        yield _sse({"type": "status", "stage": "saving"}, trace_id)
+        yield _sse({"type": "status", "stage": "done"}, trace_id)
     yield _sse(final_payload, trace_id)
     log(
         "info",

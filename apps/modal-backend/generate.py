@@ -265,6 +265,7 @@ class GenerateBody(BaseModel):
     web_search: bool = True
     session_id: str
     current_node_id: str = ""
+    generation_id: str | None = None
     mode: str = "query"
     image: str | None = None
     parent_query: str | None = None
@@ -940,10 +941,25 @@ async def _event_stream(
 
     from obs import bind_trace, log, record_error
     from providers import spend
+    from providers.cancel_registry import GENERATION_CANCELS, GenerationCancelToken
 
     bind_trace(trace_id)
     started = _time.perf_counter()
     log("info", "sse.generate.start", mode=body.mode, locale=body.output_locale)
+
+    cancel_token: GenerationCancelToken | None = None
+    if body.generation_id:
+        try:
+            cancel_token = await GENERATION_CANCELS.start(
+                body.generation_id, task=_asyncio.current_task()
+            )
+        except ValueError as exc:
+            yield _sse(
+                {"type": "error", "message": str(exc)},
+                trace_id,
+            )
+            await GENERATION_CANCELS.finish(body.generation_id)
+            return
 
     # Observability for client-guard regressions: the web's in-flight ref
     # should make identical back-to-back generates impossible — if one shows
@@ -973,6 +989,8 @@ async def _event_stream(
             },
             trace_id,
         )
+        if cancel_token is not None:
+            await GENERATION_CANCELS.finish(cancel_token.generation_id)
         return
 
     async def _abort_if_disconnected(stage: str) -> None:
@@ -987,6 +1005,8 @@ async def _event_stream(
         Each abort is recorded in obs so /trace/abort-stats can show how
         much wall-time (and $) we save by polling here.
         """
+        if cancel_token is not None:
+            cancel_token.raise_if_cancelled()
         if is_disconnected is None:
             return
         try:
@@ -1020,6 +1040,14 @@ async def _event_stream(
     # WEB_SEARCH_ON_TAP=true if you want the legacy behaviour back.
     web_search_on_tap = env_flag("WEB_SEARCH_ON_TAP")
     effective_web_search = body.web_search and (body.mode != "tap" or web_search_on_tap)
+    # B2 live pages use the local SearXNG grounding adapter. The existing tap
+    # default suppresses legacy web search for latency; keep that behavior for
+    # legacy providers while allowing an explicitly requested live search.
+    if (
+        os.environ.get("FLIPBOOK_LIVE_PROVIDER", "").strip().lower() == "openclaw"
+        and not env_flag("MOCK_PROVIDERS")
+    ):
+        effective_web_search = body.web_search
     try:
         # Edit mode short-circuits the planner: we already have an image, the
         # user just wants to mutate it. Persisted as a child node so the
@@ -1099,6 +1127,7 @@ async def _event_stream(
             _vlm_grounding_on=_vlm_grounding_on,
             _vlm_grounding_repair_on=_vlm_grounding_repair_on,
             _run_grounding=_run_grounding,
+            _is_cancelled=(cancel_token.cancelled if cancel_token is not None else None),
         ):
             yield frame
     except _asyncio.CancelledError:
@@ -1127,6 +1156,9 @@ async def _event_stream(
             )
         else:
             yield _sse({"type": "error", "message": str(exc)}, trace_id)
+    finally:
+        if cancel_token is not None:
+            await GENERATION_CANCELS.finish(cancel_token.generation_id)
 
 
 @fastapi_app.post("/sse/generate")
@@ -1154,6 +1186,22 @@ async def sse_generate(req: Request) -> Response:
             "X-Accel-Buffering": "no",
             "X-Trace-Id": trace_id,
         },
+    )
+
+
+class CancelGenerationBody(BaseModel):
+    generation_id: str = Field(min_length=1, max_length=200)
+
+
+@fastapi_app.post("/sse/cancel")
+async def sse_cancel(body: CancelGenerationBody) -> JSONResponse:
+    """Best-effort app cancellation; unknown ids are already finished."""
+
+    from providers.cancel_registry import GENERATION_CANCELS
+
+    cancelled = await GENERATION_CANCELS.cancel(body.generation_id)
+    return JSONResponse(
+        {"generation_id": body.generation_id, "cancelled": cancelled}
     )
 
 

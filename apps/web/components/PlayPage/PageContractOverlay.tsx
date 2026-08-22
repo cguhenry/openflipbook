@@ -5,6 +5,7 @@ import type {
   TextAnchorV1,
   TextBlockV1,
 } from "@openflipbook/config";
+import { citationNumbers } from "@/lib/citation-utils";
 
 const ANCHOR_CLASS: Record<TextAnchorV1, string> = {
   "top-left": "left-[clamp(.4rem,1.6vw,.75rem)] top-[clamp(.4rem,1.6vw,.75rem)] items-start text-left",
@@ -62,6 +63,16 @@ export function PageContractOverlay({
         >
           <span className="max-w-full overflow-wrap-anywhere rounded-md bg-[color:rgba(250,248,240,.86)] px-[clamp(.4rem,1.4vw,.7rem)] py-[clamp(.25rem,.9vw,.45rem)] text-[var(--color-ink)] shadow-sm backdrop-blur-[2px]">
             {block.text}
+            {citationNumbers(block, pagePlan.sources).map((number) => (
+              <sup
+                key={`${block.id}-source-${number}`}
+                data-source-marker={number}
+                className="ms-0.5 align-super text-[.68em] font-semibold text-[var(--color-ink)]/75"
+                aria-label={`Source ${number}`}
+              >
+                [{number}]
+              </sup>
+            ))}
           </span>
         </div>
       ))}

@@ -10,14 +10,14 @@ const plan: PagePlanV1 = {
   scene: { prompt: "steam engine cutaway, no text, no labels", style: "textbook", aspect_ratio: "16:9" },
   text_blocks: [
     { id: "t001", role: "title", text: "蒸汽機如何運作", anchor: "top-left" },
-    { id: "t002", role: "body", text: "蒸汽推動活塞，再帶動飛輪。", anchor: "bottom-left" },
+    { id: "t002", role: "body", text: "蒸汽推動活塞，再帶動飛輪。", anchor: "bottom-left", source_ids: ["S1"] },
   ],
   hotspots: [
     { id: "h001", label: "活塞", sub_query: "活塞如何運作？", visual_target: "piston", desired_bbox: [0.4, 0.25, 0.25, 0.45] },
     { id: "h002", label: "飛輪", sub_query: "飛輪有何作用？", visual_target: "flywheel", desired_bbox: [0.7, 0.25, 0.2, 0.5] },
   ],
   motion_hints: [],
-  sources: [],
+  sources: [{ id: "S1", title: "Steam reference", url: "https://example.com", snippet: "fixture" }],
 };
 
 describe("PageContractOverlay", () => {
@@ -26,6 +26,7 @@ describe("PageContractOverlay", () => {
     expect(html).toContain("蒸汽機如何運作");
     expect(html).toContain("蒸汽推動活塞，再帶動飛輪。");
     expect(html).toContain('data-text-block-id="t001"');
+    expect(html).toContain("[1]");
   });
 
   it("never steals pointer events from the underlying image click handler", () => {

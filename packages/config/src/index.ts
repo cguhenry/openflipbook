@@ -96,6 +96,8 @@ export interface GenerateRequestBody {
   web_search: boolean;
   session_id: string;
   current_node_id: string;
+  // Client-owned id for one cancellable generation attempt.
+  generation_id?: string;
   mode?: GenerateMode;
   image?: string;
   parent_query?: string;
@@ -306,8 +308,11 @@ export interface GenerateProgressEvent {
 }
 
 export interface Citation {
+  id?: string;
   url: string;
   title?: string | null;
+  snippet?: string;
+  engine?: string | null;
 }
 
 // Geometric grounding result (VLM_GROUNDING): how well the rendered frame
@@ -345,6 +350,8 @@ export interface GenerateFinalEvent {
   // Web-search citations the planner used. Empty when web search is off
   // or the model returned none. Already domain-deduped, capped at ~3.
   sources?: Citation[];
+  grounding_warning?: string;
+  generation_id?: string;
   // Which non-fresh image operation rendered this page ("zoom_continue",
   // "enter_scene"). Absent on the fresh path — additive, backwards-compat.
   image_op?: string;
@@ -391,8 +398,13 @@ export interface GenerateErrorEvent {
 export type GenerateStage =
   | "click_resolving"
   | "click_resolved"
+  | "searching"
+  | "grounding_warning"
   | "planning"
   | "generating_image"
+  | "aligning"
+  | "saving"
+  | "done"
   // A fast-tier draft frame is about to land as `progress`; the main render
   // is still running and will replace it (PROGRESSIVE_DRAFT).
   | "draft"
@@ -402,6 +414,7 @@ export interface GenerateStatusEvent {
   type: "status";
   stage: GenerateStage;
   page_title?: string;
+  message?: string;
   subject?: string;
   // Resolver self-report when stage === "click_resolved". Web client can
   // render the bounding-box overlay or a "tap something specific?" toast

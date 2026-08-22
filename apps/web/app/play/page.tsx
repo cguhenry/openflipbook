@@ -151,6 +151,11 @@ import PageContractOverlay from "@/components/PlayPage/PageContractOverlay";
 import { deterministicTapPrefetch, resolveHotspot } from "@/lib/hotspot-resolver";
 import { runPageViewTransition } from "@/lib/page-transition";
 import {
+  createGeneration,
+  stopGeneration,
+  type ActiveGeneration,
+} from "@/lib/generation-control";
+import {
   isHoverResolved,
   PRECOMPUTE_PER_PAGE,
   PREFETCH_LRU_MAX,
@@ -219,7 +224,13 @@ interface PersistBody {
   aspect_ratio: string;
   final_prompt: string;
   click_in_parent?: { x_pct: number; y_pct: number } | null;
-  sources?: { url: string; title: string | null }[] | null;
+  sources?: {
+    id?: string;
+    url: string;
+    title: string | null;
+    snippet?: string;
+    engine?: string | null;
+  }[] | null;
   relation?: "descend" | "expand" | "edit";
   scale?: "component" | "peer" | "container";
   scale_tier?: ScaleTier;
@@ -246,9 +257,11 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 async function persistNode(
   body: PersistBody,
-  traceId: string | null
+  traceId: string | null,
+  signal?: AbortSignal,
 ): Promise<{ id: string; image_url: string } | null> {
   try {
+    if (signal?.aborted) return null;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -262,6 +275,7 @@ async function persistNode(
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
     });
     if (!res.ok) return null;
     return (await res.json()) as { id: string; image_url: string };
@@ -462,6 +476,7 @@ export default function PlayPage() {
     }
   }, [bloom?.done, bloom?.items.length, closeBloom]);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [generationNotice, setGenerationNotice] = useState<string | null>(null);
   const [clickRipple, setClickRipple] = useState<{
     xPx: number;
     yPx: number;
@@ -740,6 +755,7 @@ export default function PlayPage() {
   const imgRef = useRef<HTMLImageElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const activeGenerationRef = useRef<ActiveGeneration | null>(null);
   // The last generate body, any kind — powers the error banner's "Try again".
   const lastGenerateRef = useRef<GenerateRequestBody | null>(null);
   // True when the current error landed while the tab was HIDDEN — the
@@ -924,17 +940,23 @@ export default function PlayPage() {
       // here — keep the last body so the error banner's "Try again" can
       // replay it verbatim (minus trace_id: the API route claims the
       // Idempotency-Key per trace, so a same-trace replay would 409).
-      lastGenerateRef.current = body;
+      const active = createGeneration();
+      activeGenerationRef.current?.controller.abort();
       abortRef.current?.abort();
-      const ac = new AbortController();
-      abortRef.current = ac;
+      activeGenerationRef.current = active;
+      abortRef.current = active.controller;
+      body = { ...body, generation_id: active.generationId };
+      const traceId = body.trace_id ?? newTraceId();
+      body = { ...body, trace_id: traceId };
+      lastGenerateRef.current = body;
+      const ac = active.controller;
       setPhase("generating");
       setError(null);
+      setGenerationNotice(null);
       setEditVerdictChip(null);
       setStatusMsg(
         body.mode === "tap" ? "Resolving what you tapped…" : "Planning page…"
       );
-      const traceId = body.trace_id ?? newTraceId();
       bindTrace(traceId, { announce: true });
 
       try {
@@ -956,6 +978,12 @@ export default function PlayPage() {
         let lastTitle = body.query;
         let lastImage: string | null = null;
         for await (const payload of sseData(response.body)) {
+          if (
+            ac.signal.aborted ||
+            activeGenerationRef.current?.generationId !== active.generationId
+          ) {
+            break;
+          }
           const evt = JSON.parse(payload) as GenerateEvent;
           if (evt.type === "status") {
             hudEmit("sse:status", {
@@ -967,6 +995,10 @@ export default function PlayPage() {
             });
             if (evt.stage === "click_resolved" && evt.subject) {
               setStatusMsg(`Exploring "${evt.subject}"…`);
+            } else if (evt.stage === "searching") {
+              setStatusMsg("Grounding page…");
+            } else if (evt.stage === "grounding_warning") {
+              setGenerationNotice(evt.message ?? "Grounding unavailable; continuing without sources.");
             } else if (evt.stage === "planning") {
               setStatusMsg("Planning page…");
             } else if (evt.stage === "generating_image") {
@@ -986,6 +1018,10 @@ export default function PlayPage() {
               );
             } else if (evt.stage === "draft") {
               setStatusMsg("Draft preview — the full render is refining…");
+            } else if (evt.stage === "aligning") {
+              setStatusMsg("Aligning explored points…");
+            } else if (evt.stage === "saving") {
+              setStatusMsg("Saving page…");
             }
           } else if (evt.type === "progress") {
             lastImage = `data:image/jpeg;base64,${evt.jpeg_b64}`;
@@ -1002,6 +1038,12 @@ export default function PlayPage() {
               imageDataUrl: lastImage,
             }));
           } else if (evt.type === "final") {
+            if (
+              ac.signal.aborted ||
+              activeGenerationRef.current?.generationId !== active.generationId
+            ) {
+              break;
+            }
             lastImage = evt.image_data_url;
             lastTitle = evt.page_title;
             const evtSources: Citation[] = Array.isArray(evt.sources)
@@ -1015,6 +1057,9 @@ export default function PlayPage() {
             });
             if (typeof evt.session_spend_estimate === "number") {
               setSessionSpend(evt.session_spend_estimate);
+            }
+            if (evt.grounding_warning) {
+              setGenerationNotice(evt.grounding_warning);
             }
             setProgressiveDraft(false);
             setPage({
@@ -1088,18 +1133,25 @@ export default function PlayPage() {
                 sources: evtSources.map((s) => ({
                   url: s.url,
                   title: s.title ?? null,
+                  ...(s.id ? { id: s.id } : {}),
+                  ...(s.snippet ? { snippet: s.snippet } : {}),
+                  ...(s.engine !== undefined ? { engine: s.engine } : {}),
                 })),
                 scene_view: foldedSceneView,
                 page_plan: evt.page_plan ?? null,
                 aligned_hotspots: evt.aligned_hotspots ?? null,
               },
-              traceId
+              traceId,
+              ac.signal,
             ).then((saved) => {
               // A newer generation or a navigation aborted this one while the
               // node was persisting. This .then is detached from the fetch
               // reader, so without this guard it would clobber the current
               // page/history/URL with THIS (stale) node. (#3)
-              if (ac.signal.aborted) return;
+              if (
+                ac.signal.aborted ||
+                activeGenerationRef.current?.generationId !== active.generationId
+              ) return;
               if (saved) {
                 const persisted: Page = {
                   nodeId: saved.id,
@@ -1191,12 +1243,27 @@ export default function PlayPage() {
             throw new Error(evt.message);
           }
         }
+        if (
+          ac.signal.aborted ||
+          activeGenerationRef.current?.generationId !== active.generationId
+        ) {
+          return;
+        }
         setPhase("ready");
         setStatusMsg(null);
       } catch (err) {
         if ((err as Error).name === "AbortError") {
+          if (activeGenerationRef.current?.generationId !== active.generationId) {
+            return;
+          }
           setMorphFx(null);
           setProgressiveDraft(false);
+          return;
+        }
+        if (
+          ac.signal.aborted ||
+          activeGenerationRef.current?.generationId !== active.generationId
+        ) {
           return;
         }
         setError((err as Error).message);
@@ -1229,10 +1296,28 @@ export default function PlayPage() {
             source: "client",
           }),
         }).catch(() => {});
+      } finally {
+        if (activeGenerationRef.current?.generationId === active.generationId) {
+          activeGenerationRef.current = null;
+        }
       }
     },
     []
   );
+
+  const stopActiveGeneration = useCallback(() => {
+    const active = activeGenerationRef.current;
+    if (!active) return;
+    // Invalidate the reader immediately so a late final cannot update the UI;
+    // stopGeneration then notifies the backend before aborting the fetch.
+    activeGenerationRef.current = null;
+    setGenerationNotice("Generation cancelled");
+    setStatusMsg("Generation cancelled");
+    setPhase("ready");
+    setMorphFx(null);
+    setProgressiveDraft(false);
+    void stopGeneration(active, "/api/generate-page/cancel");
+  }, []);
 
   // The error banner's "Try again": replay the exact failed request with the
   // trace_id stripped — the API route claims the Idempotency-Key per trace,
@@ -1240,7 +1325,7 @@ export default function PlayPage() {
   const retryLast = useCallback(() => {
     const last = lastGenerateRef.current;
     if (!last) return;
-    const { trace_id: _dropped, ...rest } = last;
+    const { trace_id: _dropped, generation_id: _oldGeneration, ...rest } = last;
     void generate(rest);
   }, [generate]);
 
@@ -3488,6 +3573,12 @@ export default function PlayPage() {
         </div>
       )}
 
+      {generationNotice && phase !== "generating" && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+          {generationNotice}
+        </div>
+      )}
+
       {page?.imageDataUrl && history.items.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <Breadcrumb crumbs={breadcrumb} onJump={selectFromMap} />
@@ -3959,7 +4050,12 @@ export default function PlayPage() {
                 />
               )}
 
-            {phase === "generating" && <GeneratingBanner statusMsg={statusMsg} />}
+            {phase === "generating" && (
+              <GeneratingBanner
+                statusMsg={statusMsg}
+                onStop={stopActiveGeneration}
+              />
+            )}
 
             {phase === "ready" &&
               localizeStatus?.status === "failed" &&

@@ -107,8 +107,11 @@ export interface ClickInParent {
 }
 
 export interface NodeSource {
+  id?: string;
   url: string;
   title: string | null;
+  snippet?: string;
+  engine?: string | null;
 }
 
 export interface NodeDoc extends Document {
@@ -124,7 +127,8 @@ export interface NodeDoc extends Document {
   final_prompt: string | null;
   click_in_parent: ClickInParent | null;
   // Web-search citations the planner used. Backwards-compatible: missing on
-  // pre-citations nodes and treated as []. Domain-deduped, max ~3.
+  // pre-citations nodes and treated as []. Canonical source ids/snippets are
+  // additive for B2 pages.
   sources?: NodeSource[] | null;
   // M3 scale-space: how this node relates to its parent ("descend" = tap-in /
   // default, "expand" = bloomed neighbour, "ascend" = OUTWARD container) + its

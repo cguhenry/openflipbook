@@ -25,7 +25,13 @@ interface CreateBody {
   aspect_ratio?: string;
   final_prompt?: string | null;
   click_in_parent?: { x_pct: number; y_pct: number } | null;
-  sources?: { url: string; title: string | null }[] | null;
+  sources?: {
+    id?: string;
+    url: string;
+    title: string | null;
+    snippet?: string;
+    engine?: string | null;
+  }[] | null;
   relation?: "descend" | "expand" | "ascend" | "edit";
   scale?: "component" | "peer" | "container";
   scale_tier?: ScaleTier | null;
@@ -89,7 +95,7 @@ export async function POST(req: Request) {
     aspect_ratio: body.aspect_ratio ?? "16:9",
     final_prompt: body.final_prompt ?? null,
     click_in_parent: body.click_in_parent ?? null,
-    sources: Array.isArray(body.sources) ? body.sources.slice(0, 3) : null,
+    sources: Array.isArray(body.sources) ? body.sources.slice(0, 5) : null,
     relation: body.relation ?? "descend",
     scale: body.scale ?? "peer",
     scale_tier: body.scale_tier ?? null,

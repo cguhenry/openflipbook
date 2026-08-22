@@ -1,4 +1,8 @@
-import type { AlignedHotspotV1, PagePlanV1 } from "@openflipbook/config";
+import type {
+  AlignedHotspotV1,
+  PagePlanV1,
+  SourceRefV1,
+} from "@openflipbook/config";
 import { resolveHotspot } from "@/lib/hotspot-resolver";
 
 export interface OfflineSourceNode {
@@ -10,6 +14,13 @@ export interface OfflineSourceNode {
   image_asset: string;
   aspect_ratio?: string | null;
   click_in_parent?: { x_pct: number; y_pct: number } | null;
+  sources?: Array<{
+    id?: string;
+    url: string;
+    title: string | null;
+    snippet?: string;
+    engine?: string | null;
+  }> | null;
   page_plan?: PagePlanV1 | null;
   aligned_hotspots?: AlignedHotspotV1[] | null;
   created_at?: string | null;
@@ -20,6 +31,11 @@ export interface PortableTextBlock {
   role: string;
   text: string;
   anchor: string;
+  source_ids: string[];
+}
+
+export interface PortableSource extends SourceRefV1 {
+  engine?: string | null;
 }
 
 export interface PortableHotspot {
@@ -39,6 +55,7 @@ export interface PortableNode {
   image: string;
   aspect_ratio: string;
   text_blocks: PortableTextBlock[];
+  sources: PortableSource[];
   hotspots: PortableHotspot[];
   created_at: string;
 }
@@ -65,6 +82,20 @@ function ordered(nodes: readonly OfflineSourceNode[]): OfflineSourceNode[] {
 function rootId(nodes: readonly OfflineSourceNode[]): string {
   const roots = nodes.filter((node) => !node.parent_id);
   return (roots[0] ?? nodes[0])?.id ?? "";
+}
+
+function portableSources(
+  node: OfflineSourceNode,
+  plan: PagePlanV1 | null,
+): PortableSource[] {
+  const rows = plan?.sources ?? node.sources ?? [];
+  return rows.slice(0, 5).map((source, index) => ({
+    id: source.id ?? `S${index + 1}`,
+    title: source.title ?? "",
+    url: source.url,
+    snippet: source.snippet ?? "",
+    ...("engine" in source ? { engine: source.engine ?? null } : {}),
+  }));
 }
 
 /**
@@ -138,7 +169,9 @@ export function buildPortableBook(
         role: block.role,
         text: block.text,
         anchor: block.anchor,
+        source_ids: block.source_ids ?? [],
       })),
+      sources: portableSources(node, plan),
       hotspots,
       created_at: node.created_at ?? "",
     };

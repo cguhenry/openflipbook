@@ -119,8 +119,20 @@ def test_normalizes_flipbook_text_block_aliases() -> None:
     ]
     normalized = validate_page_plan_minimal(aliased)
     assert normalized["text_blocks"] == [
-        {"id": "t001", "role": "title", "text": "蒸汽機如何運作", "anchor": "top-left"},
-        {"id": "t002", "role": "caption", "text": "蒸汽推動活塞。", "anchor": "bottom"},
+        {
+            "id": "t001",
+            "role": "title",
+            "text": "蒸汽機如何運作",
+            "anchor": "top-left",
+            "source_ids": [],
+        },
+        {
+            "id": "t002",
+            "role": "caption",
+            "text": "蒸汽推動活塞。",
+            "anchor": "bottom",
+            "source_ids": [],
+        },
     ]
 
 
