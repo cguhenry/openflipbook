@@ -136,6 +136,13 @@ def test_normalizes_flipbook_text_block_aliases() -> None:
     ]
 
 
+def test_normalizes_page_plan_wrapper_before_strict_validation() -> None:
+    wrapped = {"page_plan": json.loads(json.dumps(PLAN))}
+    normalized = validate_page_plan_minimal(wrapped)
+    assert normalized["schema_version"] == "1.0"
+    assert normalized["title"] == PLAN["title"]
+
+
 def test_rejects_out_of_range_bbox() -> None:
     bad = json.loads(json.dumps(PLAN))
     bad["hotspots"][0]["desired_bbox"][0] = 1.2

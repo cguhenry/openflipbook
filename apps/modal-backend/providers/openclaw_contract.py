@@ -111,6 +111,12 @@ def _bbox(value: Any, name: str) -> tuple[float, float, float, float]:
 
 def validate_page_plan_minimal(plan: dict[str, Any]) -> dict[str, Any]:
     """Apply B0 cardinality rules and then validate the repo's PagePlan model."""
+    # The prepared flipbook route may wrap the PagePlan object once under its
+    # protocol key.  Unwrap only that known equivalent shape; core PagePlan
+    # validation remains strict below.
+    wrapped = plan.get("page_plan")
+    if "schema_version" not in plan and isinstance(wrapped, dict):
+        plan = wrapped
     if plan.get("schema_version") != "1.0":
         raise OpenClawContractError("PagePlan schema_version must be 1.0")
     # The prepared flipbook agent sometimes emits the same text-block data

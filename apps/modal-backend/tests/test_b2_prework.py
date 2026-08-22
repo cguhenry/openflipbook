@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import httpx
 import pytest
 
@@ -11,7 +14,10 @@ from providers.searxng_grounding import (
     SearxngGroundingError,
     canonical_http_url,
     normalize_results,
+    useful_source_snippet,
 )
+
+RECOVERY_FIXTURE = Path(__file__).parent / "fixtures" / "b2_recovery_child_empty_snippets.json"
 
 
 def test_canonical_url_removes_tracking_and_fragment() -> None:
@@ -102,6 +108,37 @@ def test_canonical_sources_override_model_sources_and_unknown_ids() -> None:
     assert result["text_blocks"][0]["source_ids"] == ["S2"]
     assert result["text_blocks"][1]["source_ids"] == []
     assert [row["id"] for row in result["sources"]] == ["S1", "S2"]
+
+
+def test_actual_b2_recovery_fixture_gets_nonempty_display_fallback() -> None:
+    payload = json.loads(RECOVERY_FIXTURE.read_text(encoding="utf-8"))
+    for source in payload["sources"]:
+        result = useful_source_snippet(
+            snippet=source["snippet"],
+            title=source["title"],
+            url=source["url"],
+        )
+        assert result == source["title"]
+        assert GroundingSource(
+            source["id"], source["title"], source["url"], source["snippet"]
+        ).page_contract_ref()["snippet"] == source["title"]
+
+
+def test_source_snippet_prefers_content_and_then_hostname() -> None:
+    assert (
+        useful_source_snippet(
+            content="<p>Steam powers a piston.</p>",
+            title="example.org",
+            url="https://example.org/",
+        )
+        == "Steam powers a piston."
+    )
+    assert (
+        useful_source_snippet(
+            content="", snippet="", title="", url="https://example.org/path"
+        )
+        == "example.org"
+    )
 
 
 @pytest.mark.asyncio

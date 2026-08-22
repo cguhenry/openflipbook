@@ -22,11 +22,33 @@ class SearxngGroundingError(RuntimeError):
 _TRACKING_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid"}
 
 
-def _plain(value: object, limit: int) -> str:
+def plain_text(value: object, limit: int = 360) -> str:
     text = html.unescape(str(value or ""))
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:limit].strip()
+
+
+def useful_source_snippet(
+    *,
+    content: object = "",
+    snippet: object = "",
+    title: object = "",
+    url: object = "",
+    limit: int = 360,
+) -> str:
+    """Return display-only source text without inventing factual prose."""
+
+    for candidate in (content, snippet, title):
+        value = plain_text(candidate, limit=limit)
+        if value:
+            return value
+
+    try:
+        hostname = urlsplit(str(url or "")).hostname or ""
+    except ValueError:
+        hostname = ""
+    return plain_text(hostname, limit=limit) or "Source"
 
 
 def canonical_http_url(raw: object) -> str | None:
@@ -65,11 +87,22 @@ class GroundingSource:
     engine: str | None = None
 
     def page_contract_ref(self) -> dict[str, str]:
+        title = plain_text(self.title, limit=180)
+        if not title:
+            try:
+                title = plain_text(urlsplit(self.url).hostname or "", limit=180)
+            except ValueError:
+                title = ""
+        title = title or "Source"
         return {
             "id": self.id,
-            "title": self.title,
+            "title": title,
             "url": self.url,
-            "snippet": self.snippet,
+            "snippet": useful_source_snippet(
+                snippet=self.snippet,
+                title=title,
+                url=self.url,
+            ),
         }
 
 
@@ -90,15 +123,20 @@ def normalize_results(payload: dict, limit: int = 5) -> list[GroundingSource]:
         host = urlsplit(url).netloc
         if per_host.get(host, 0) >= 2:
             continue
-        title = _plain(row.get("title"), 180) or host
-        snippet = _plain(row.get("content") or row.get("snippet"), 360) or title
+        title = plain_text(row.get("title"), 180) or host
+        snippet = useful_source_snippet(
+            content=row.get("content"),
+            snippet=row.get("snippet"),
+            title=title,
+            url=url,
+        )
         out.append(
             GroundingSource(
                 id=f"S{len(out) + 1}",
                 title=title,
                 url=url,
                 snippet=snippet,
-                engine=_plain(row.get("engine"), 80) or None,
+                engine=plain_text(row.get("engine"), 80) or None,
             )
         )
         seen_urls.add(url)

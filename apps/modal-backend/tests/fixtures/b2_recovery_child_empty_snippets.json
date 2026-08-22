@@ -1,0 +1,47 @@
+{
+  "child_id": "0eb01d5b-cd4d-4d49-9fbc-75d60b091522",
+  "parent_id": "60c73f5d-d809-42cd-a9a7-3b7c13d1a32c",
+  "source_hotspot": "h001",
+  "sources": [
+    {
+      "id": "S1",
+      "title": "www.otboiler.com.tw",
+      "url": "https://www.otboiler.com.tw/post/%E6%8E%A2%E7%B4%A2%E8%92%B8%E6%B1%BD%E9%8D%8B%E7%88%90%E4%B9%8B%E7%A5%9E%E7%A7%98%E5%8E%9F%E7%90%86%EF%BC%9A%E5%AF%A6%E7%94%A8%E6%8C%87%E5%8D%97%E8%88%87%E5%B0%88%E6%A5%AD%E7%9F%A5%E8%AD%98%E8%A7%A3%E6%9E%90",
+      "snippet": ""
+    },
+    {
+      "id": "S2",
+      "title": "zh.wikipedia.org",
+      "url": "https://zh.wikipedia.org/wiki/%E8%92%B8%E6%B1%BD%E9%8D%8B%E7%88%90",
+      "snippet": ""
+    },
+    {
+      "id": "S3",
+      "title": "zh-tw.cncontrolvalve.com",
+      "url": "https://zh-tw.cncontrolvalve.com/the-beginners-guide-to-steam-boilers/",
+      "snippet": ""
+    },
+    {
+      "id": "S4",
+      "title": "zh.wikipedia.org",
+      "url": "https://zh.wikipedia.org/zh-tw/%E8%92%B8%E6%B1%BD%E6%9C%BA",
+      "snippet": ""
+    },
+    {
+      "id": "S5",
+      "title": "www.lishui.com.tw",
+      "url": "https://www.lishui.com.tw/index.php/2026-07-27-02-07-08/330-what-is-a-steam-boiler",
+      "snippet": ""
+    }
+  ],
+  "text_blocks": [
+    {
+      "id": "t002",
+      "text": "燃料加熱水，水受熱沸騰並產生蒸汽，再經管道送往蒸汽機。",
+      "source_ids": [
+        "S2",
+        "S4"
+      ]
+    }
+  ]
+}
