@@ -360,6 +360,12 @@ class GenerateBody(BaseModel):
     trace_id: str | None = None
 
 
+class ImageSeedBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=128)
+    image_data_url: str = Field(min_length=20)
+    trace_id: str | None = None
+
+
 # World Mode is gated behind an env flag (default off) so it's a no-op in prod
 # until a deployer turns it on — like EXPAND_MAP_PAN / IMAGE_CONDITIONING.
 def _world_mode_on(requested: bool) -> bool:
@@ -1202,6 +1208,52 @@ async def sse_cancel(body: CancelGenerationBody) -> JSONResponse:
     cancelled = await GENERATION_CANCELS.cancel(body.generation_id)
     return JSONResponse(
         {"generation_id": body.generation_id, "cancelled": cancelled}
+    )
+
+
+@fastapi_app.post("/image-seed")
+async def image_seed(req: Request, body: ImageSeedBody) -> JSONResponse:
+    """Return one PagePlan + local alignment for an existing uploaded image."""
+
+    from obs import TRACE_HEADER, bind_trace, record_error
+    from providers import spend
+
+    trace_id = bind_trace(req.headers.get(TRACE_HEADER) or body.trace_id)
+    limited = _paid_guard(req, trace_id, body.session_id)
+    if limited is not None:
+        return limited
+    spend.record_vlm_call(body.session_id)
+    try:
+        if env_flag("MOCK_PROVIDERS"):
+            from contracts.image_seed_contract import normalize_image_seed_envelope
+            from contracts.mock_page_contract import build_mock_image_seed_payload
+
+            page_plan, aligned_hotspots = normalize_image_seed_envelope(
+                build_mock_image_seed_payload()
+            )
+        else:
+            from providers import openclaw_runtime
+
+            if not openclaw_runtime.enabled():
+                return JSONResponse(
+                    {"error": "image seed requires the OpenClaw vision provider", "trace_id": trace_id},
+                    status_code=503,
+                    headers={"X-Trace-Id": trace_id},
+                )
+            page_plan, aligned_hotspots = await openclaw_runtime.OpenClawGatewayClient().image_seed(
+                body.image_data_url
+            )
+    except Exception as exc:
+        record_error("image_seed", exc)
+        return _err_json(exc, trace_id)
+    return JSONResponse(
+        {
+            "page_plan": page_plan,
+            "aligned_hotspots": aligned_hotspots,
+            "vision_model": "openai/gpt-5.6-luna",
+            "trace_id": trace_id,
+        },
+        headers={"X-Trace-Id": trace_id},
     )
 
 

@@ -38,6 +38,7 @@ interface CreateBody {
   scene_view?: SceneView | null;
   page_plan?: PagePlanV1 | null;
   aligned_hotspots?: AlignedHotspotV1[] | null;
+  seed_type?: "image" | null;
 }
 
 export async function POST(req: Request) {
@@ -102,6 +103,7 @@ export async function POST(req: Request) {
     scene_view: body.scene_view ?? null,
     page_plan: body.page_plan ?? null,
     aligned_hotspots: body.aligned_hotspots ?? null,
+    seed_type: body.seed_type ?? null,
   });
 
   const result = {

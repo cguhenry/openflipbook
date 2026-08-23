@@ -1,5 +1,6 @@
 import { readServerEnv } from "@/lib/env";
 import { listRecentErrors } from "@/lib/db";
+import { modalAuthHeaders } from "@/lib/modal";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,15 @@ interface BackendStatus {
   in_flight?: number;
   last_error_ts?: number | null;
   providers?: { fal?: boolean; openrouter?: boolean };
+  live_provider?: string;
+  provider_mode?: string;
+  openclaw_connected?: boolean;
+  planner_vision_model?: string;
+  image_model?: string;
+  searxng_connected?: boolean;
+  mongo_connected?: boolean | null;
+  minio_connected?: boolean | null;
+  mock_mode?: boolean;
   error?: string;
 }
 
@@ -28,11 +38,12 @@ async function fetchBackendStatus(): Promise<BackendStatus | null> {
     const res = await fetch(`${modalUrl.replace(/\/$/, "")}/status`, {
       cache: "no-store",
       signal: AbortSignal.timeout(4000),
+      headers: modalAuthHeaders(),
     });
-    if (!res.ok) return { error: `HTTP ${res.status}` };
+    if (!res.ok) return { error: "unavailable" };
     return (await res.json()) as BackendStatus;
-  } catch (err) {
-    return { error: (err as Error).message };
+  } catch {
+    return { error: "unavailable" };
   }
 }
 
@@ -139,6 +150,34 @@ export default async function StatusPage() {
         </p>
       ) : (
         <ul className="mt-3 grid grid-cols-2 gap-2 text-sm">
+          <li>
+            OpenClaw:{" "}
+            <span className={backend.openclaw_connected ? "text-green-700" : "text-amber-700"}>
+              {backend.openclaw_connected ? "connected" : "unavailable"}
+            </span>
+          </li>
+          <li>
+            SearXNG:{" "}
+            <span className={backend.searxng_connected ? "text-green-700" : "text-amber-700"}>
+              {backend.searxng_connected ? "connected" : "unavailable"}
+            </span>
+          </li>
+          <li>planner/vision: <code>{backend.planner_vision_model ?? "openai/gpt-5.6-luna"}</code></li>
+          <li>image: <code>{backend.image_model ?? "openai/gpt-image-2"}</code></li>
+          <li>provider: <code>{backend.live_provider ?? "unknown"}</code></li>
+          <li>mode: <code>{backend.provider_mode ?? "unknown"}</code>{backend.mock_mode ? " (mock)" : ""}</li>
+          <li>
+            Mongo:{" "}
+            <span className={backend.mongo_connected === false ? "text-amber-700" : "text-green-700"}>
+              {backend.mongo_connected === false ? "unavailable" : backend.mongo_connected === true ? "connected" : "configured"}
+            </span>
+          </li>
+          <li>
+            MinIO:{" "}
+            <span className={backend.minio_connected === false ? "text-amber-700" : "text-green-700"}>
+              {backend.minio_connected === false ? "unavailable" : backend.minio_connected === true ? "connected" : "configured"}
+            </span>
+          </li>
           <li>
             fal:{" "}
             <span

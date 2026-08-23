@@ -100,3 +100,9 @@ def build_mock_contract_payload(query: str, page_title: str, aspect_ratio: str =
         "page_plan": plan.model_dump(mode="json"),
         "aligned_hotspots": [hotspot.model_dump(mode="json") for hotspot in aligned],
     }
+
+
+def build_mock_image_seed_payload() -> dict:
+    """Deterministic zero-key stand-in for one image-seed vision response."""
+
+    return build_mock_contract_payload("the supplied source image", "Mock image seed", "16:9")

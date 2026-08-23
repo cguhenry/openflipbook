@@ -412,6 +412,22 @@ async def _check_provider(name: str, url: str) -> bool:
 async def status_payload(service: str) -> dict[str, Any]:
     """Build the payload for /status endpoints. Cheap; safe to call often."""
     mock_mode = env_flag("MOCK_PROVIDERS")
+    openclaw_connected = False
+    planner_vision_model = "openai/gpt-5.6-luna"
+    image_model = "openai/gpt-image-2"
+    live_provider = "mock" if mock_mode else "legacy"
+    if not mock_mode:
+        from providers import openclaw_runtime
+
+        if openclaw_runtime.enabled():
+            live_provider = "openclaw"
+            planner_vision_model = openclaw_runtime.text_model()
+            image_model = openclaw_runtime.image_model()
+            try:
+                await openclaw_runtime.OpenClawGatewayClient().authenticated_health()
+                openclaw_connected = True
+            except Exception:
+                openclaw_connected = False
     if mock_mode:
         # Mock mode is a complete provider substitute. Do not probe real cloud
         # providers merely to render /status; keeping booleans True preserves
@@ -424,6 +440,7 @@ async def status_payload(service: str) -> dict[str, Any]:
             _check_provider("openrouter", "https://openrouter.ai/api/v1/models"),
         )
     return {
+        "live_provider": live_provider,
         "provider_mode": "mock" if mock_mode else "live",
         "ok": True,
         "service": service,
@@ -431,6 +448,15 @@ async def status_payload(service: str) -> dict[str, Any]:
         "uptime_s": round(time.time() - _started_at, 1),
         "in_flight": _in_flight,
         "last_error_ts": _last_error_ts,
+        "openclaw_connected": openclaw_connected,
+        "planner_vision_model": planner_vision_model,
+        "image_model": image_model,
+        # A configured base URL is intentionally the only SearXNG signal here;
+        # status must not spend a search call or expose connection details.
+        "searxng_connected": bool(os.environ.get("FLIPBOOK_SEARXNG_BASE_URL", "").strip()),
+        "mongo_connected": None,
+        "minio_connected": None,
+        "mock_mode": mock_mode,
         "providers": {
             "fal": fal_ok,
             "openrouter": openrouter_ok,

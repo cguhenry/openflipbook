@@ -117,6 +117,7 @@ import { useContainRect } from "@/hooks/useContainRect";
 import { formatEditVerdict } from "@/lib/edit-verdict";
 import { ImageFailedOverlay } from "@/components/PlayPage/ImageFailedOverlay";
 import { DragDropOverlay } from "@/components/PlayPage/DragDropOverlay";
+import SessionHistory from "@/components/SessionHistory";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useWorldState } from "@/hooks/useWorldState";
 import { useWorldMap } from "@/hooks/useWorldMap";
@@ -209,7 +210,10 @@ function newSessionId(): string {
 
 function initialSessionId(): string {
   if (typeof window === "undefined") return newSessionId();
-  const cont = new URLSearchParams(window.location.search).get("continue");
+  const params = new URLSearchParams(window.location.search);
+  const explicit = params.get("session");
+  if (explicit && explicit.trim()) return explicit.trim();
+  const cont = params.get("continue");
   return cont && cont.trim() ? cont.trim() : newSessionId();
 }
 
@@ -237,6 +241,7 @@ interface PersistBody {
   scene_view?: SceneView | null;
   page_plan?: PagePlanV1 | null;
   aligned_hotspots?: AlignedHotspotV1[] | null;
+  seed_type?: "image" | null;
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -432,7 +437,7 @@ export default function PlayPage() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState<Page | null>(null);
   const { morphFx, setMorphFx } = useImageMorph(page?.imageDataUrl);
-  const [sessionId] = useState(initialSessionId);
+  const [sessionId, setSessionId] = useState(initialSessionId);
   // Surface the live session id to the landing's "open last atlas" link.
   // Wrapped in a try because localStorage can throw under privacy modes.
   useEffect(() => {
@@ -1426,26 +1431,58 @@ export default function PlayPage() {
       }
       try {
         const dataUrl = await readFileAsDataUrl(file);
-        // Join the abort scheme so a generation/navigation that supersedes this
-        // upload flips ac.signal and the detached persist .then below bails (#3).
+        // Join the abort scheme so New Session or navigation can stop the one
+        // in-flight seed request. There is deliberately no retry path here:
+        // B3's live budget is one Luna vision attempt.
         abortRef.current?.abort();
         const ac = new AbortController();
         abortRef.current = ac;
-        const seedTitle = "Uploaded image";
-        const seedQuery = "Uploaded image";
+        const uploadTrace = newTraceId();
+        bindTrace(uploadTrace);
+        lastGenerateRef.current = null;
+        setPhase("generating");
+        setError(null);
+        setGenerationNotice(null);
+        setStatusMsg("Reading the uploaded image…");
+
+        const seedRes = await fetch("/api/image-seed", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            [TRACE_HEADER]: uploadTrace,
+          },
+          body: JSON.stringify({
+            session_id: sessionId,
+            image_data_url: dataUrl,
+            trace_id: uploadTrace,
+          }),
+          signal: ac.signal,
+        });
+        const seedPayload = (await seedRes.json().catch(() => null)) as {
+          page_plan?: PagePlanV1;
+          aligned_hotspots?: AlignedHotspotV1[];
+          error?: string;
+        } | null;
+        if (!seedRes.ok || !seedPayload?.page_plan || !Array.isArray(seedPayload.aligned_hotspots)) {
+          throw new Error(seedPayload?.error ?? `Image seed failed: HTTP ${seedRes.status}`);
+        }
+        const pagePlan = seedPayload.page_plan;
+        const alignedHotspots = seedPayload.aligned_hotspots;
+        const seedTitle = pagePlan.title || "Uploaded image";
+        const seedQuery = seedTitle;
         setPage({
           nodeId: null,
           sessionId,
           query: seedQuery,
           title: seedTitle,
           imageDataUrl: dataUrl,
+          parentId: null,
+          pagePlan,
+          alignedHotspots,
+          seedType: "image",
         });
-        setPhase("ready");
-        setError(null);
-        setStatusMsg(null);
-        const uploadTrace = newTraceId();
-        bindTrace(uploadTrace);
-        void persistNode(
+        setStatusMsg("Saving image seed…");
+        const saved = await persistNode(
           {
             parent_id: null,
             session_id: sessionId,
@@ -1453,53 +1490,44 @@ export default function PlayPage() {
             page_title: seedTitle,
             image_data_url: dataUrl,
             image_model: "user-upload",
-            prompt_author_model: "user-upload",
-            aspect_ratio: "16:9",
-            final_prompt: "",
+            prompt_author_model: "openai/gpt-5.6-luna",
+            aspect_ratio: pagePlan.scene.aspect_ratio,
+            final_prompt: pagePlan.scene.prompt,
+            sources: [],
+            seed_type: "image",
+            page_plan: pagePlan,
+            aligned_hotspots: alignedHotspots,
           },
-          uploadTrace
-        ).then((saved) => {
-          if (ac.signal.aborted) return;
-          if (saved) {
-            const persisted: Page = {
-              nodeId: saved.id,
-              sessionId,
-              query: seedQuery,
-              title: seedTitle,
-              imageDataUrl: dataUrl,
-              parentId: null,
-            };
-            setPage((prev) => (prev ? { ...prev, nodeId: saved.id } : prev));
-            const newId = saved.id;
-            setHistory((prev) => {
-              const existingIdx = prev.items.findIndex(
-                (p) => p.nodeId === newId
-              );
-              const items =
-                existingIdx >= 0
-                  ? prev.items.map((p, i) =>
-                      i === existingIdx ? persisted : p
-                    )
-                  : [...prev.items, persisted];
-              const trail = [
-                ...prev.trail.slice(0, prev.trailIdx + 1),
-                newId,
-              ];
-              return { items, trail, trailIdx: trail.length - 1 };
-            });
-            const url = new URL(window.location.href);
-            url.pathname = `/n/${saved.id}`;
-            window.history.replaceState({}, "", url.toString());
-            void triggerExtraction({
-              sessionId,
-              nodeId: saved.id,
-              imageDataUrl: dataUrl,
-              caption: seedTitle,
-              traceId: uploadTrace,
-            });
-          }
-        });
+          uploadTrace,
+          ac.signal,
+        );
+        if (ac.signal.aborted) return;
+        if (!saved) throw new Error("Image seed persistence failed.");
+        const persisted: Page = {
+          nodeId: saved.id,
+          sessionId,
+          query: seedQuery,
+          title: seedTitle,
+          imageDataUrl: dataUrl,
+          parentId: null,
+          sources: [],
+          pagePlan,
+          alignedHotspots,
+          seedType: "image",
+        };
+        setPage(persisted);
+        setHistory((prev) => ({
+          items: [...prev.items.filter((p) => p.nodeId !== saved.id), persisted],
+          trail: [...prev.trail.slice(0, prev.trailIdx + 1), saved.id],
+          trailIdx: prev.trailIdx + 1,
+        }));
+        const url = new URL(window.location.href);
+        url.pathname = `/n/${saved.id}`;
+        window.history.replaceState({}, "", url.toString());
+        setPhase("ready");
+        setStatusMsg(null);
       } catch (err) {
+        if ((err as Error).name === "AbortError") return;
         // An upload failure isn't a generation — "Try again" must not replay
         // an unrelated earlier generate body.
         lastGenerateRef.current = null;
@@ -2252,6 +2280,7 @@ export default function PlayPage() {
     if (phase !== "ready") return;
     if (worldEnabled) return;
     if (!page?.imageDataUrl || !page.nodeId) return;
+    if (page.pagePlan && page.alignedHotspots?.length) return;
     if (page.imageDataUrl.startsWith("http") && !page.imageDataUrl.startsWith("data:")) {
       // Persisted images served from R2 are also fine — backend accepts URLs
       // via the image-data-url field, but the precompute endpoint needs a
@@ -2346,11 +2375,16 @@ export default function PlayPage() {
     outputLocale,
     bucketKey,
     worldEnabled,
+    page?.pagePlan,
+    page?.alignedHotspots?.length,
   ]);
 
   useEffect(() => {
     const img = imgRef.current;
     if (!img || !page?.imageDataUrl) return;
+    // Image seeds already have a persisted deterministic hitmap. Do not warm
+    // the legacy hover resolver or spend another vision call for them.
+    if (page.pagePlan && page.alignedHotspots?.length) return;
     const currentImage = page.imageDataUrl;
     const currentNodeId = page.nodeId;
     const cache = prefetchCacheRef.current;
@@ -3417,6 +3451,48 @@ export default function PlayPage() {
     // "Replay clip" to bring it back without re-running fal.
   }, []);
 
+  const startNewSession = useCallback(() => {
+    stopActiveGeneration();
+    abortRef.current?.abort();
+    abortRef.current = null;
+    closeBloom();
+    disconnectStream();
+    activeGenerationRef.current = null;
+    lastGenerateRef.current = null;
+    erroredWhileHiddenRef.current = false;
+    clickInFlightRef.current = false;
+    precomputedRef.current.clear();
+    const nextSessionId = newSessionId();
+    setSessionId(nextSessionId);
+    setInput("");
+    setPage(null);
+    setHistory({ items: [], trail: [], trailIdx: -1 });
+    setPhase("idle");
+    setError(null);
+    setStatusMsg(null);
+    setGenerationNotice(null);
+    setSessionSpend(null);
+    setViewMode("page");
+    setMorphFx(null);
+    setProgressiveDraft(false);
+    setClickRipple(null);
+    setBlankTap(null);
+    setHoverPos(null);
+    setStrokeState(null);
+    setEditMode(false);
+    setEditRegion(null);
+    setEditDragRect(null);
+    setEditVerdictChip(null);
+    setScrubberOpen(false);
+    setQuickbarOpen(false);
+    setHelpOpen(false);
+    setCodexOpen(false);
+    const url = new URL(window.location.href);
+    url.pathname = "/play";
+    url.search = `?session=${encodeURIComponent(nextSessionId)}`;
+    window.history.replaceState({}, "", url.toString());
+  }, [closeBloom, disconnectStream, stopActiveGeneration]);
+
   const replayVideo = useCallback(() => {
     if (!PRODUCT_FLAGS.video) return;
     if (!fallbackVideoUrl) return;
@@ -3527,6 +3603,13 @@ export default function PlayPage() {
       />
 
       <div className="-mt-2 flex justify-end gap-2">
+        <SessionHistory
+          currentSessionId={sessionId}
+          onNewSession={startNewSession}
+          onResume={(id) => {
+            window.location.assign(`/play?continue=${encodeURIComponent(id)}`);
+          }}
+        />
         {/* Always-on gallery entrance: the published-worlds feed at /gallery
             was only reachable AFTER you publish (window.open on success), so a
             first-time visitor could never discover other people's worlds — the
@@ -3835,7 +3918,7 @@ export default function PlayPage() {
                   }}
                 />
               )}
-              {PRODUCT_FLAGS.domLabels && page.pagePlan && (
+              {page.pagePlan && (PRODUCT_FLAGS.domLabels || page.seedType === "image") && (
                 <PageContractOverlay
                   pagePlan={page.pagePlan}
                   alignedHotspots={page.alignedHotspots ?? []}

@@ -38,6 +38,7 @@ export interface Page {
   relation?: NodeRelation;
   pagePlan?: PagePlanV1 | null;
   alignedHotspots?: AlignedHotspotV1[] | null;
+  seedType?: "image" | null;
 }
 
 /** One node as served by GET /api/sessions/[id] (the ?continue= hydration). */
@@ -63,6 +64,7 @@ export interface SessionNodeWire {
   relation?: NodeRelation;
   page_plan?: PagePlanV1 | null;
   aligned_hotspots?: AlignedHotspotV1[] | null;
+  seed_type?: "image" | null;
 }
 
 /** Fold the SSE final's scene_view stamp over the request's scene_view.
@@ -110,6 +112,7 @@ export function nodeToPage(n: SessionNodeWire): Page {
     geoExtracted: n.geo_extracted ?? false,
     pagePlan: n.page_plan ?? null,
     alignedHotspots: n.aligned_hotspots ?? null,
+    seedType: n.seed_type ?? null,
     // Explicit "descend" rides through too (not collapsed to absent) — the
     // atlas gets the same concrete value off NodeRow, and world-layout keys
     // its zoom-in nesting shrink on the explicit form.

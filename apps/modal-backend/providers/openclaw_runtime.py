@@ -29,10 +29,17 @@ from typing import Any
 import httpx
 
 from _env import env_flag
+from contracts.image_seed_contract import normalize_image_seed_envelope
 from providers.openclaw_contract import (
+    OPENCLAW_RESPONSES_ALIGNMENT_INVALID,
+    OPENCLAW_RESPONSES_JSON_SCHEMA_INVALID,
+    OPENCLAW_RESPONSES_PAGEPLAN_INVALID,
     AlignedBox,
     OpenClawContractError,
+    classify_response_failure,
     extract_json_object_from_envelope,
+    safe_response_diagnostics,
+    safe_validation_errors,
     validate_alignment_minimal,
     validate_page_plan_minimal,
 )
@@ -192,14 +199,67 @@ def _image_input(data_url: str) -> dict[str, Any]:
     }
 
 
+def _format_response_contract_failure(
+    diagnostics: dict[str, Any] | None,
+    code: str,
+    message: str,
+) -> OpenClawGatewayError:
+    safe = dict(diagnostics or {})
+    safe["code"] = code
+    return OpenClawGatewayError(
+        f"{message} [{code}] "
+        + json.dumps(safe, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    )
+
+
+def _format_validation_contract_failure(
+    exc: BaseException,
+    code: str,
+    message: str,
+) -> OpenClawGatewayError:
+    """Expose only safe Pydantic locations/types for model contract failures."""
+
+    detail = {"validation_errors": safe_validation_errors(exc)}
+    return OpenClawGatewayError(
+        f"{message} [{code}] "
+        + json.dumps(detail, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    )
+
+
 def _response_text(envelope: dict[str, Any]) -> dict[str, Any]:
     status = envelope.get("status")
     if status not in (None, "completed"):
-        raise OpenClawGatewayError(f"OpenClaw Responses request ended with status {status!r}")
+        diagnostics = safe_response_diagnostics(
+            envelope, code=classify_response_failure(envelope)
+        )
+        raise _format_response_contract_failure(
+            diagnostics,
+            diagnostics["code"],
+            "OpenClaw Responses request ended with a non-completed status",
+        )
     try:
         return extract_json_object_from_envelope(envelope)
     except OpenClawContractError as exc:
-        raise OpenClawGatewayError("OpenClaw Responses output did not contain JSON") from exc
+        diagnostics = safe_response_diagnostics(
+            envelope, code=classify_response_failure(envelope)
+        )
+        raise _format_response_contract_failure(
+            diagnostics,
+            diagnostics["code"],
+            "OpenClaw Responses output contract failed",
+        ) from exc
+
+
+def _image_seed_failure_code(exc: Exception) -> str:
+    detail = str(exc).lower()
+    if "pageplan" in detail or "schema_version" in detail or "text block" in detail:
+        return OPENCLAW_RESPONSES_PAGEPLAN_INVALID
+    if any(
+        marker in detail
+        for marker in ("aligned", "hotspot", "bbox", "confidence", "parity")
+    ):
+        return OPENCLAW_RESPONSES_ALIGNMENT_INVALID
+    return OPENCLAW_RESPONSES_JSON_SCHEMA_INVALID
 
 
 def _source_candidates(value: Any) -> list[str]:
@@ -258,6 +318,7 @@ class OpenClawGatewayClient:
 
     def __init__(self, http_client: httpx.AsyncClient | None = None) -> None:
         self._http_client = http_client
+        self._last_response_diagnostics: dict[str, Any] | None = None
 
     async def _request(
         self,
@@ -341,6 +402,9 @@ class OpenClawGatewayClient:
             },
             timeout=request_timeout_s(),
         )
+        # Retain only the safe summary for the immediate contract validator;
+        # the raw Responses envelope remains local to this call.
+        self._last_response_diagnostics = safe_response_diagnostics(payload)
         return _response_text(payload)
 
     async def authenticated_health(self) -> dict[str, Any]:
@@ -365,18 +429,119 @@ class OpenClawGatewayClient:
         *,
         grounded_sources: list[Any] | None = None,
     ) -> dict[str, Any]:
-        raw = await self.responses_json(system_prompt, user_prompt)
-        if grounded_sources is not None:
-            # Source metadata is server-owned.  Inject it before validation so
-            # a model that returns only local ids/URLs cannot fail the request
-            # by omitting canonical title/snippet fields.
-            from providers.grounded_contract import inject_canonical_sources
-
-            raw = inject_canonical_sources(raw, grounded_sources)
         try:
+            raw = await self.responses_json(system_prompt, user_prompt)
+            if grounded_sources is not None:
+                # Source metadata is server-owned.  Inject it before validation so
+                # a model that returns only local ids/URLs cannot fail the request
+                # by omitting canonical title/snippet fields.
+                from providers.grounded_contract import inject_canonical_sources
+
+                raw = inject_canonical_sources(raw, grounded_sources)
             return validate_page_plan_minimal(raw)
         except OpenClawContractError as exc:
-            raise OpenClawGatewayError(f"OpenClaw PagePlan validation failed: {exc}") from exc
+            raise _format_validation_contract_failure(
+                exc,
+                OPENCLAW_RESPONSES_PAGEPLAN_INVALID,
+                "OpenClaw PagePlan validation failed",
+            ) from exc
+        finally:
+            self._last_response_diagnostics = None
+
+    async def image_seed(
+        self,
+        image_data_url: str,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Extract a seed contract and align it in the same vision response.
+
+        B3 deliberately keeps this as one Responses request.  Tap regions are
+        derived locally after validation, so a seed never calls the separate
+        alignment route or an image-generation tool.
+        """
+
+        system = (
+            "You are a machine-output vision compiler for OpenFlipbook. Analyze "
+            "only the supplied existing source image and return exactly ONE JSON "
+            "object. The first character must be { and the last character must "
+            "be }. Output JSON only: no markdown, code fence, prose, explanation, "
+            "reasoning, comments, or extra top-level keys. Do not call tools and "
+            "do not generate or edit an image. Replace every angle-bracket "
+            "placeholder in the contract skeleton with an actual value. Use this "
+            "exact canonical PagePlan skeleton and field names:\n"
+            '{\n'
+            '  "page_plan": {\n'
+            '    "schema_version": "1.0",\n'
+            '    "title": "<non-empty title>",\n'
+            '    "summary": "<non-empty summary>",\n'
+            '    "scene": {\n'
+            '      "prompt": "<visual description that explicitly says no text>",\n'
+            '      "style": "clean illustrated textbook",\n'
+            '      "aspect_ratio": "16:9"\n'
+            "    },\n"
+            '    "text_blocks": [\n'
+            '      {"id": "t001", "role": "title", "text": "<DOM title>", '
+            '"anchor": "top", "source_ids": []},\n'
+            '      {"id": "t002", "role": "body", "text": "<DOM body>", '
+            '"anchor": "bottom", "source_ids": []}\n'
+            "    ],\n"
+            '    "hotspots": [\n'
+            '      {"id": "h001", "label": "<short label>", '
+            '"sub_query": "<next exploration query>", '
+            '"visual_target": "<object or region description>", '
+            '"desired_bbox": [0.10, 0.10, 0.20, 0.20]},\n'
+            '      {"id": "h002", "label": "<short label>", '
+            '"sub_query": "<next exploration query>", '
+            '"visual_target": "<object or region description>", '
+            '"desired_bbox": [0.40, 0.40, 0.20, 0.20]}\n'
+            "    ],\n"
+            '    "motion_hints": [],\n'
+            '    "sources": []\n'
+            "  },\n"
+            '  "aligned_hotspots": [\n'
+            '    {"id": "h001", "actual_bbox": [0.10, 0.10, 0.20, 0.20], '
+            '"alignment_confidence": 0.95},\n'
+            '    {"id": "h002", "actual_bbox": [0.40, 0.40, 0.20, 0.20], '
+            '"alignment_confidence": 0.95}\n'
+            "  ]\n"
+            "}\n"
+            "Use TextBlock IDs t001, t002, ... matching ^t[0-9]{3,}$ and use "
+            "anchor for TextBlock placement. Do not emit bbox inside text_blocks. "
+            "Use 2 to 8 hotspots with IDs h001, h002, ...; every planned hotspot "
+            "must have label, sub_query, visual_target, and desired_bbox. Every "
+            "aligned_hotspots row must have id, actual_bbox, and "
+            "alignment_confidence, and aligned IDs must exactly equal PagePlan "
+            "hotspot IDs. Coordinates are normalized positive bboxes contained in "
+            "0..1. For this B3 closure motion_hints must be [] and sources must be "
+            "[]. Explicitly forbid MotionHint fields target_id and hint; do not "
+            "emit tap_region because the application derives it locally. The scene "
+            "prompt must describe the supplied image and explicitly contain the "
+            "words 'no text'. "
+            "Return the single object now."
+        )
+        user = (
+            "Analyze this exact existing image as an OpenFlipbook image seed. "
+            "Preserve its subject and visual language in scene.prompt, identify "
+            "2 to 8 useful visible regions for later tap exploration, and emit "
+            "only the strict JSON object required above."
+        )
+        try:
+            raw = await self.responses_json(
+                system,
+                user,
+                image_data_url=image_data_url,
+                max_output_tokens=3000,
+            )
+            try:
+                return normalize_image_seed_envelope(raw)
+            except Exception as exc:  # Do not expose model-produced validation details.
+                code = _image_seed_failure_code(exc)
+                raise _format_validation_contract_failure(
+                    exc,
+                    code,
+                    "OpenClaw image-seed output contract failed",
+                ) from exc
+        finally:
+            self._last_response_diagnostics = None
 
     async def align_hotspots(
         self,
@@ -401,16 +566,22 @@ class OpenClawGatewayClient:
             f"{_json_for_prompt(hotspot_rows)}\n\n"
             f"Expected ids in this exact set: {_json_for_prompt(expected_ids)}"
         )
-        raw = await self.responses_json(
-            system,
-            user,
-            image_data_url=image_data_url,
-            max_output_tokens=900,
-        )
         try:
+            raw = await self.responses_json(
+                system,
+                user,
+                image_data_url=image_data_url,
+                max_output_tokens=900,
+            )
             return validate_alignment_minimal(raw, expected_ids)
         except OpenClawContractError as exc:
-            raise OpenClawGatewayError(f"OpenClaw hotspot alignment failed: {exc}") from exc
+            raise _format_response_contract_failure(
+                self._last_response_diagnostics,
+                OPENCLAW_RESPONSES_ALIGNMENT_INVALID,
+                "OpenClaw hotspot alignment failed",
+            ) from exc
+        finally:
+            self._last_response_diagnostics = None
 
     async def image_generate(
         self,

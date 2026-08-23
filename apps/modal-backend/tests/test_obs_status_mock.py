@@ -1,5 +1,7 @@
 """Regression tests for zero-network /status behavior in mock mode."""
 
+import json
+
 import pytest
 
 import obs
@@ -19,6 +21,24 @@ async def test_status_payload_mock_mode_never_pings_provider(monkeypatch):
     assert payload["ok"] is True
     assert payload["provider_mode"] == "mock"
     assert payload["providers"] == {"fal": True, "openrouter": True}
+    assert payload["planner_vision_model"] == "openai/gpt-5.6-luna"
+    assert payload["image_model"] == "openai/gpt-image-2"
+    assert payload["openclaw_connected"] is False
+    assert payload["searxng_connected"] is False
+
+
+@pytest.mark.asyncio
+async def test_status_payload_is_safe_when_secret_like_env_values_exist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MOCK_PROVIDERS", "1")
+    monkeypatch.setenv("FLIPBOOK_OPENCLAW_BEARER_FILE", "/run/secrets/pw.txt")
+    monkeypatch.setenv("OAUTH_TOKEN", "must-not-appear")
+    payload = await obs.status_payload("test")
+    serialized = json.dumps(payload)
+    assert "pw.txt" not in serialized
+    assert "must-not-appear" not in serialized
+    assert "Authorization" not in serialized
 
 
 @pytest.mark.asyncio

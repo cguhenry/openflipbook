@@ -54,6 +54,7 @@ export async function GET(req: Request, { params }: Params) {
       geo_extracted: row.geo_extracted,
       page_plan: row.page_plan ?? null,
       aligned_hotspots: row.aligned_hotspots ?? null,
+      seed_type: row.seed_type ?? null,
       created_at: row.created_at,
     })),
   });

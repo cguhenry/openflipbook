@@ -62,3 +62,10 @@ describe("toRow scale_tier round-trip (B2)", () => {
     expect(row.scale_tier).toBeNull();
   });
 });
+
+describe("toRow image seed metadata", () => {
+  it("preserves the seed marker and defaults legacy rows to null", () => {
+    expect(toRow(doc({ seed_type: "image" })).seed_type).toBe("image");
+    expect(toRow(doc()).seed_type).toBeNull();
+  });
+});

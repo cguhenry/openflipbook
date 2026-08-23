@@ -34,6 +34,7 @@ export async function GET(_req: Request, { params }: Params) {
     sources: row.sources,
     page_plan: row.page_plan ?? null,
     aligned_hotspots: row.aligned_hotspots ?? null,
+    seed_type: row.seed_type ?? null,
     geo_extracted: row.geo_extracted,
     created_at: row.created_at,
   });

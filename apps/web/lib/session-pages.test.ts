@@ -69,9 +69,13 @@ describe("nodeToPage (?continue= hydration)", () => {
       tap_region: [[0, 0], [1, 0], [1, 1], [0, 1]],
       alignment_confidence: 1,
     }];
-    const page = nodeToPage(wire({ page_plan: pagePlan, aligned_hotspots: aligned }));
+    const page = nodeToPage({
+      ...wire({ page_plan: pagePlan, aligned_hotspots: aligned }),
+      seed_type: "image",
+    });
     expect(page.pagePlan).toEqual(pagePlan);
     expect(page.alignedHotspots).toEqual(aligned);
+    expect(page.seedType).toBe("image");
     expect(nodeToPage(wire()).pagePlan).toBeNull();
     expect(nodeToPage(wire()).alignedHotspots).toBeNull();
   });

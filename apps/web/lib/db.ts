@@ -144,6 +144,7 @@ export interface NodeDoc extends Document {
   // A2 Page Contract metadata. Optional on the document for old Mongo rows.
   page_plan?: PagePlanV1 | null;
   aligned_hotspots?: AlignedHotspotV1[] | null;
+  seed_type?: "image" | null;
   // When entity extraction last RAN for this node (set even if it found zero
   // entities). Durable "already extracted" marker so a later revisit / reload
   // never silently re-runs the non-deterministic VLM pass. Absent on legacy
@@ -173,6 +174,7 @@ export interface NodeInsert {
   scene_view?: SceneView | null;
   page_plan?: PagePlanV1 | null;
   aligned_hotspots?: AlignedHotspotV1[] | null;
+  seed_type?: "image" | null;
 }
 
 export interface NodeRow {
@@ -193,6 +195,7 @@ export interface NodeRow {
   scale_tier: ScaleTier | null;
   page_plan: PagePlanV1 | null;
   aligned_hotspots: AlignedHotspotV1[] | null;
+  seed_type: "image" | null;
   // The observer pose + view level this node was rendered from. Null on
   // pre-geometry / classic nodes. Read back on revisit so the minimap scopes to
   // the right frame and the entered angle is reproducible.
@@ -215,6 +218,7 @@ export function toRow(doc: NodeDoc): NodeRow {
     scene_view,
     page_plan,
     aligned_hotspots,
+    seed_type,
     geo_extracted_at,
     ...rest
   } = doc;
@@ -229,6 +233,7 @@ export function toRow(doc: NodeDoc): NodeRow {
     scene_view: scene_view ?? null,
     page_plan: page_plan ?? null,
     aligned_hotspots: aligned_hotspots ?? null,
+    seed_type: seed_type ?? null,
     geo_extracted: geo_extracted_at != null,
     created_at: created_at.toISOString(),
   };
@@ -255,6 +260,7 @@ export async function insertNode(n: NodeInsert): Promise<NodeRow> {
     scene_view: n.scene_view ?? null,
     page_plan: n.page_plan ?? null,
     aligned_hotspots: n.aligned_hotspots ?? null,
+    seed_type: n.seed_type ?? null,
     created_at: new Date(),
   };
   await collection.insertOne(doc);
@@ -348,6 +354,76 @@ export async function listNodesBySession(
       ? `${lastDoc.created_at.toISOString()}|${lastDoc._id}`
       : null;
   return { rows, next_cursor };
+}
+
+export interface SessionSummaryRow {
+  session_id: string;
+  root_node_id: string;
+  latest_node_id: string;
+  title: string;
+  node_count: number;
+  branch_count: number;
+  updated_at: string;
+  thumbnail_key: string;
+  has_sources: boolean;
+  has_image_seed: boolean;
+}
+
+/** Derive lightweight history cards from the existing node graph. */
+export async function listSessionSummaries(limit = 30): Promise<SessionSummaryRow[]> {
+  const cap = Math.min(Math.max(limit, 1), 100);
+  const docs = await (await nodes())
+    .find({ session_id: { $type: "string" } })
+    .sort({ created_at: -1, _id: 1 })
+    .limit(5000)
+    .toArray();
+  const grouped = new Map<string, NodeRow[]>();
+  for (const doc of docs) {
+    const row = toRow(doc);
+    const bucket = grouped.get(row.session_id) ?? [];
+    bucket.push(row);
+    grouped.set(row.session_id, bucket);
+  }
+
+  const summaries: SessionSummaryRow[] = [];
+  for (const [sessionId, rows] of grouped) {
+    if (rows.length === 0) continue;
+    const byId = new Map(rows.map((row) => [row.id, row] as const));
+    const children = new Map<string, number>();
+    const roots = rows.filter((row) => !row.parent_id || !byId.has(row.parent_id));
+    for (const row of rows) {
+      if (row.parent_id && byId.has(row.parent_id)) {
+        children.set(row.parent_id, (children.get(row.parent_id) ?? 0) + 1);
+      }
+    }
+    const root = [...(roots.length ? roots : rows)].sort(compareRows)[0]!;
+    const latest = [...rows].sort(compareRows).at(-1)!;
+    const plan = root.page_plan;
+    summaries.push({
+      session_id: sessionId,
+      root_node_id: root.id,
+      latest_node_id: latest.id,
+      title: plan?.title || root.page_title || root.query || "Untitled session",
+      node_count: rows.length,
+      branch_count: [...children.values()].reduce(
+        (count, childCount) => count + Math.max(0, childCount - 1),
+        0,
+      ),
+      updated_at: latest.created_at,
+      thumbnail_key: root.image_key,
+      has_sources: rows.some(
+        (row) => Boolean(row.page_plan?.sources?.length || row.sources.length),
+      ),
+      has_image_seed: rows.some((row) => row.seed_type === "image"),
+    });
+  }
+  return summaries
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.session_id.localeCompare(b.session_id))
+    .slice(0, cap);
+}
+
+function compareRows(a: NodeRow, b: NodeRow): number {
+  return a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
 }
 
 export interface ErrorDoc extends Document {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -15,6 +16,228 @@ from contracts.page_contract import PagePlan, RenderedPage
 
 class OpenClawContractError(RuntimeError):
     """Raised when an OpenClaw envelope cannot become the current Page Contract."""
+
+
+OPENCLAW_RESPONSES_STATUS_ERROR = "OPENCLAW_RESPONSES_STATUS_ERROR"
+OPENCLAW_RESPONSES_NO_OUTPUT_TEXT = "OPENCLAW_RESPONSES_NO_OUTPUT_TEXT"
+OPENCLAW_RESPONSES_TEXT_NOT_JSON = "OPENCLAW_RESPONSES_TEXT_NOT_JSON"
+OPENCLAW_RESPONSES_POSSIBLY_TRUNCATED_JSON = "OPENCLAW_RESPONSES_POSSIBLY_TRUNCATED_JSON"
+OPENCLAW_RESPONSES_JSON_SCHEMA_INVALID = "OPENCLAW_RESPONSES_JSON_SCHEMA_INVALID"
+OPENCLAW_RESPONSES_PAGEPLAN_INVALID = "OPENCLAW_RESPONSES_PAGEPLAN_INVALID"
+OPENCLAW_RESPONSES_ALIGNMENT_INVALID = "OPENCLAW_RESPONSES_ALIGNMENT_INVALID"
+
+
+_REDACTED_MARKER = "<REDACTED>"
+_SENSITIVE_MARKERS = (
+    "authorization",
+    "bearer ",
+    "data:image",
+    "password",
+    "secret",
+    "api_key",
+    "api-key",
+    "token",
+    "base64",
+)
+
+
+def safe_validation_errors(exc: BaseException) -> list[dict[str, Any]]:
+    """Return only Pydantic ``loc``/``type`` metadata from an exception chain."""
+
+    current: BaseException | None = exc
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        errors = getattr(current, "errors", None)
+        if callable(errors):
+            try:
+                raw_errors = errors(include_url=False)
+            except TypeError:
+                raw_errors = errors()
+            if isinstance(raw_errors, list):
+                safe: list[dict[str, Any]] = []
+                for row in raw_errors:
+                    if not isinstance(row, dict) or not isinstance(row.get("type"), str):
+                        continue
+                    loc = row.get("loc", ())
+                    if isinstance(loc, (list, tuple)):
+                        safe_loc = [
+                            item
+                            for item in loc
+                            if isinstance(item, (str, int)) and not isinstance(item, bool)
+                        ]
+                    else:
+                        safe_loc = []
+                    safe.append({"loc": safe_loc, "type": row["type"]})
+                return safe
+        current = current.__cause__ or current.__context__
+    return []
+
+
+def _safe_response_marker(value: Any) -> str | None:
+    """Return a bounded metadata marker without exposing free-form payloads."""
+    if not isinstance(value, str):
+        return None
+    marker = value.strip()
+    if not marker or len(marker) > 80 or any(ord(char) < 32 for char in marker):
+        return None
+    lowered = marker.lower()
+    if any(sensitive in lowered for sensitive in _SENSITIVE_MARKERS):
+        return _REDACTED_MARKER
+    return marker
+
+
+def _safe_key(value: Any) -> str:
+    marker = _safe_response_marker(str(value))
+    return marker if marker is not None else _REDACTED_MARKER
+
+
+def _candidate_output_texts(node: Any) -> list[str]:
+    """Collect candidate output text while retaining no text in diagnostics."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in {"output_text", "text"} and isinstance(value, str):
+                found.append(value)
+            elif key in {"content", "output", "message"}:
+                found.extend(_candidate_output_texts(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_candidate_output_texts(item))
+    return found
+
+
+def _parse_json_object(text: str) -> bool:
+    candidate = text.strip()
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"\s*```$", "", candidate).strip()
+    try:
+        return isinstance(json.loads(candidate), dict)
+    except json.JSONDecodeError:
+        pass
+    start, end = candidate.find("{"), candidate.rfind("}")
+    if 0 <= start < end:
+        try:
+            return isinstance(json.loads(candidate[start : end + 1]), dict)
+        except json.JSONDecodeError:
+            return False
+    return False
+
+
+def _numeric_usage(envelope: dict[str, Any]) -> dict[str, int]:
+    usage = envelope.get("usage")
+    if not isinstance(usage, dict):
+        return {}
+    normalized: dict[str, int] = {}
+    for source, target in (
+        ("input_tokens", "input_tokens"),
+        ("prompt_tokens", "input_tokens"),
+        ("output_tokens", "output_tokens"),
+        ("completion_tokens", "output_tokens"),
+    ):
+        value = usage.get(source)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            normalized.setdefault(target, value)
+    return normalized
+
+
+def _output_shape(envelope: dict[str, Any]) -> tuple[list[str], list[str], int]:
+    output = envelope.get("output")
+    if not isinstance(output, list):
+        return [], [], 0
+    item_types: list[str] = []
+    content_types: list[str] = []
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        item_type = _safe_response_marker(item.get("type"))
+        if item_type is not None:
+            item_types.append(item_type)
+        content = item.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                content_type = _safe_response_marker(part.get("type"))
+                if content_type is not None:
+                    content_types.append(content_type)
+    return item_types, content_types, len(output)
+
+
+def _safe_error_metadata(value: Any) -> dict[str, str]:
+    if isinstance(value, str):
+        reason = _safe_response_marker(value)
+        return {"reason": reason} if reason is not None else {}
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, str] = {}
+    for key in ("type", "code", "reason"):
+        marker = _safe_response_marker(value.get(key))
+        if marker is not None:
+            result[key] = marker
+    return result
+
+
+def classify_response_failure(envelope: dict[str, Any]) -> str:
+    """Classify a Responses envelope without retaining model-produced text."""
+    status = envelope.get("status")
+    if status not in (None, "completed"):
+        return OPENCLAW_RESPONSES_STATUS_ERROR
+    texts = _candidate_output_texts(envelope)
+    if not texts:
+        return OPENCLAW_RESPONSES_NO_OUTPUT_TEXT
+    if any(_parse_json_object(text) for text in texts):
+        return OPENCLAW_RESPONSES_JSON_SCHEMA_INVALID
+    stripped = [text.strip() for text in texts if text.strip()]
+    if any(text.startswith("{") and not text.endswith("}") for text in stripped):
+        return OPENCLAW_RESPONSES_POSSIBLY_TRUNCATED_JSON
+    return OPENCLAW_RESPONSES_TEXT_NOT_JSON
+
+
+def safe_response_diagnostics(
+    envelope: dict[str, Any], *, code: str | None = None
+) -> dict[str, Any]:
+    """Return only bounded response metadata and hashes; never raw output text."""
+    texts = _candidate_output_texts(envelope)
+    item_types, content_types, output_count = _output_shape(envelope)
+    candidates = []
+    for raw in texts:
+        stripped = raw.strip()
+        candidates.append(
+            {
+                "length": len(raw),
+                "sha256": hashlib.sha256(
+                    raw.encode("utf-8", errors="replace")
+                ).hexdigest(),
+                "starts_with_object": stripped.startswith("{"),
+                "ends_with_object": stripped.endswith("}"),
+                "parseable_json_object": _parse_json_object(raw),
+            }
+        )
+    status = _safe_response_marker(envelope.get("status"))
+    response_id = _safe_response_marker(envelope.get("id"))
+    incomplete = _safe_error_metadata(envelope.get("incomplete_details"))
+    error = _safe_error_metadata(envelope.get("error"))
+    return {
+        "code": code or classify_response_failure(envelope),
+        "response_status": status,
+        "response_id": response_id,
+        "top_level_keys": sorted(_safe_key(key) for key in envelope),
+        "output_item_count": output_count,
+        "output_item_types": item_types,
+        "content_part_types": content_types,
+        "candidate_text_count": len(texts),
+        "candidate_texts": candidates,
+        "usage": _numeric_usage(envelope),
+        "incomplete": incomplete,
+        "error": error,
+        # Keep the reference names available to callers while remaining safe.
+        "incomplete_reason": incomplete.get("reason"),
+        "error_meta": error,
+        "raw_text_saved": False,
+        "raw_envelope_saved": False,
+    }
 
 
 def _walk_strings(value: Any) -> Iterable[str]:

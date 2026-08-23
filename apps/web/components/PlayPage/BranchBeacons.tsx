@@ -22,6 +22,29 @@ export function BranchBeacons({ beacons, onSelect }: Props) {
   if (beacons.length === 0) return null;
   return (
     <>
+      {beacons.length > 1 && (
+        <div
+          data-testid="branch-chooser"
+          aria-label="Existing branches"
+          className="pointer-events-auto absolute left-1/2 top-3 z-10 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-full border border-white/40 bg-black/60 px-2 py-1 text-[11px] text-white shadow-lg backdrop-blur"
+        >
+          <span className="px-1 opacity-75">Branches</span>
+          {beacons.map((kid) => (
+            <button
+              key={`chooser-${kid.nodeId}`}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(kid.nodeId);
+              }}
+              className="max-w-36 truncate rounded-full bg-white/15 px-2 py-0.5 hover:bg-white/30"
+              title={kid.title}
+            >
+              {kid.title}
+            </button>
+          ))}
+        </div>
+      )}
       {beacons.map((kid) => (
         <button
           key={kid.nodeId}

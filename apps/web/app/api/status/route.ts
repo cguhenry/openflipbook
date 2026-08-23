@@ -19,19 +19,36 @@ export async function GET() {
       headers: modalAuthHeaders(),
       signal: AbortSignal.timeout(4000),
     });
-    const text = await upstream.text();
-    return new Response(text, {
-      status: upstream.status,
-      headers: {
-        "Content-Type":
-          upstream.headers.get("content-type") ?? "application/json",
+    const raw = (await upstream.json().catch(() => null)) as Record<string, unknown> | null;
+    const providers = raw?.providers as Record<string, unknown> | undefined;
+    return NextResponse.json(
+      {
+        ok: raw?.ok === true,
+        live_provider: typeof raw?.live_provider === "string" ? raw.live_provider : "unknown",
+        provider_mode: typeof raw?.provider_mode === "string" ? raw.provider_mode : "unknown",
+        openclaw_connected: raw?.openclaw_connected === true,
+        planner_vision_model:
+          typeof raw?.planner_vision_model === "string"
+            ? raw.planner_vision_model
+            : "openai/gpt-5.6-luna",
+        image_model:
+          typeof raw?.image_model === "string" ? raw.image_model : "openai/gpt-image-2",
+        searxng_connected: raw?.searxng_connected === true,
+        mongo_connected: raw?.mongo_connected === true ? true : raw?.mongo_connected === false ? false : null,
+        minio_connected: raw?.minio_connected === true ? true : raw?.minio_connected === false ? false : null,
+        mock_mode: raw?.mock_mode === true,
+        providers: {
+          fal: providers?.fal === true,
+          openrouter: providers?.openrouter === true,
+        },
       },
-    });
-  } catch (err) {
+      { status: upstream.status },
+    );
+  } catch {
     return NextResponse.json(
       {
         ok: false,
-        error: `status_unreachable: ${(err as Error).message}`,
+        error: "status_unreachable",
       },
       { status: 502 }
     );
