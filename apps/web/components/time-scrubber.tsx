@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { formatUi, getStrings, type LocaleStrings } from "@/lib/i18n";
 
 export interface ScrubberFrame {
   nodeId: string;
@@ -13,6 +14,7 @@ interface Props {
   currentIdx: number;
   onJump: (idx: number) => void;
   onClose: () => void;
+  t?: LocaleStrings;
 }
 
 export default function TimeScrubber({
@@ -20,6 +22,7 @@ export default function TimeScrubber({
   currentIdx,
   onJump,
   onClose,
+  t = getStrings("en"),
 }: Props) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -60,7 +63,7 @@ export default function TimeScrubber({
   return (
     <div
       role="region"
-      aria-label="Session time-scrubber"
+      aria-label={t.timeScrubber}
       className="pointer-events-auto fixed bottom-3 left-1/2 z-30 max-w-[min(960px,92vw)] -translate-x-1/2 rounded-2xl border border-[var(--color-ink)]/20 bg-[var(--color-paper)]/95 p-2 shadow-xl backdrop-blur"
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) e.preventDefault();
@@ -68,18 +71,18 @@ export default function TimeScrubber({
     >
       <div className="flex items-center justify-between px-2 pb-1.5 text-[11px] opacity-70">
         <span>
-          Step {currentIdx + 1} of {frames.length}
+          {formatUi(t.stepOf, { current: currentIdx + 1, total: frames.length })}
           {hoverIdx !== null && hoverIdx !== currentIdx ? (
-            <> · jump to {hoverIdx + 1}</>
+            <> · {formatUi(t.jumpToTitle, { title: hoverIdx + 1 })}</>
           ) : null}
         </span>
         <button
           type="button"
-          aria-label="Close time-scrubber"
+          aria-label={t.closeTimeScrubber}
           onClick={onClose}
           className="rounded px-1.5 py-0.5 text-[11px] hover:bg-[var(--color-ink)]/10"
         >
-          T · close
+          T · {t.close}
         </button>
       </div>
       <div
@@ -107,7 +110,7 @@ export default function TimeScrubber({
             <button
               key={`${f.nodeId}-${i}`}
               type="button"
-              aria-label={`Jump to ${f.title}`}
+              aria-label={formatUi(t.jumpToTitle, { title: f.title })}
               title={f.title}
               onClick={(e) => {
                 e.stopPropagation();

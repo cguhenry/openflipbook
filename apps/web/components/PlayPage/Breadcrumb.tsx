@@ -3,10 +3,12 @@
 import { useState } from "react";
 
 import type { Crumb } from "@/lib/breadcrumb";
+import { formatUi, getStrings, type LocaleStrings } from "@/lib/i18n";
 
 interface Props {
   crumbs: Crumb[];
   onJump: (nodeId: string) => void;
+  t?: LocaleStrings;
 }
 
 function short(title: string): string {
@@ -16,7 +18,7 @@ function short(title: string): string {
 // The location trail: root … current. Ancestors are buttons (jump straight back
 // — the leftmost is the map you started from); the current page is plain text.
 // Hidden until you've actually gone in (a single crumb is just the current page).
-export default function Breadcrumb({ crumbs, onJump }: Props) {
+export default function Breadcrumb({ crumbs, onJump, t = getStrings("en") }: Props) {
   // Deep trails collapse to root › … › last two (presentation only — the
   // data stays intact; "…" expands the full trail). A4 cheap fix.
   const [expanded, setExpanded] = useState(false);
@@ -27,7 +29,7 @@ export default function Breadcrumb({ crumbs, onJump }: Props) {
     : crumbs;
   return (
     <nav
-      aria-label="Location"
+      aria-label={t.location}
       data-testid="breadcrumb"
       className="flex flex-wrap items-center gap-0.5 text-xs"
     >
@@ -41,7 +43,7 @@ export default function Breadcrumb({ crumbs, onJump }: Props) {
               <button
                 type="button"
                 onClick={() => setExpanded(true)}
-                title={`Show all ${crumbs.length} steps`}
+                title={formatUi(t.showAllSteps, { count: crumbs.length })}
                 className="rounded px-1 py-0.5 opacity-70 hover:bg-[var(--color-ink)]/10 hover:opacity-100"
               >
                 …
@@ -69,7 +71,7 @@ export default function Breadcrumb({ crumbs, onJump }: Props) {
               <button
                 type="button"
                 onClick={() => onJump(c.nodeId)}
-                title={`Back to ${c.title}`}
+                title={formatUi(t.backToTitle, { title: c.title })}
                 className="rounded px-1 py-0.5 opacity-70 hover:bg-[var(--color-ink)]/10 hover:opacity-100"
               >
                 {short(c.title)}

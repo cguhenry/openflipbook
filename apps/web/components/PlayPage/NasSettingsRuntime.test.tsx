@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { getStrings, type SupportedUiLocale } from "@/lib/i18n";
 import { NasSettingsRuntime } from "./NasSettingsRuntime";
 
 const runtimeStatus = {
@@ -35,8 +36,12 @@ const runtimeStatus = {
   },
 };
 
-function setup() {
+function setup(uiLocale: SupportedUiLocale = "en") {
+  const t = getStrings(uiLocale);
   const props = {
+    t,
+    uiLocale,
+    setUiLocale: vi.fn(),
     outputLocale: "auto" as const,
     setOutputLocale: vi.fn(),
     theme: "light" as const,
@@ -47,7 +52,7 @@ function setup() {
     canExportOffline: true,
   };
   render(<NasSettingsRuntime {...props} />);
-  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: t.settings }));
   return props;
 }
 
@@ -65,7 +70,7 @@ describe("NasSettingsRuntime", () => {
       }),
     ));
     const props = setup();
-    const dialog = screen.getByRole("dialog", { name: "Settings and runtime" });
+    const dialog = screen.getByRole("dialog", { name: "Settings / Runtime" });
 
     await within(dialog).findByText("openai/gpt-5.6-luna");
     expect(dialog.className).toContain("w-full");
@@ -118,7 +123,7 @@ describe("NasSettingsRuntime", () => {
       }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     setup();
-    const dialog = screen.getByRole("dialog", { name: "Settings and runtime" });
+    const dialog = screen.getByRole("dialog", { name: "Settings / Runtime" });
     const input = within(dialog).getByLabelText("Choose owner backup archive");
     const file = new File(["zip"], "owner.zip", { type: "application/zip" });
 
@@ -144,5 +149,31 @@ describe("NasSettingsRuntime", () => {
       }),
     );
     await waitFor(() => expect((restore as HTMLButtonElement).disabled).toBe(true));
+  });
+
+  it("renders complete zh-TW NAS controls and keeps UI/output setters separate", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(runtimeStatus), { status: 200 }),
+    ));
+    const props = setup("zh-TW");
+    const dialog = screen.getByRole("dialog", { name: "設定 / 執行狀態" });
+
+    await within(dialog).findByText("OpenClaw（唯讀）");
+    expect(within(dialog).getByText("匯出與備份")).toBeTruthy();
+    expect(within(dialog).getByText("服務狀態")).toBeTruthy();
+    expect(within(dialog).getByText("斷路器")).toBeTruthy();
+    expect(within(dialog).getByText("使用量")).toBeTruthy();
+
+    fireEvent.change(within(dialog).getByRole("combobox", { name: "介面語言" }), {
+      target: { value: "fr" },
+    });
+    expect(props.setUiLocale).toHaveBeenCalledWith("fr");
+    expect(props.setOutputLocale).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByRole("combobox", { name: "輸出語言" }), {
+      target: { value: "ja" },
+    });
+    expect(props.setOutputLocale).toHaveBeenCalledWith("ja");
+    expect(props.setUiLocale).toHaveBeenCalledTimes(1);
   });
 });

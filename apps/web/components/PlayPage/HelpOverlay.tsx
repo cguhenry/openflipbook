@@ -1,7 +1,10 @@
 "use client";
 
+import { getStrings, type LocaleStrings } from "@/lib/i18n";
+
 interface Props {
   onClose: () => void;
+  t?: LocaleStrings;
 }
 
 /**
@@ -10,7 +13,7 @@ interface Props {
  * button dismisses; Esc handling is wired on the page so it stacks
  * properly with the quickbar / context menu.
  */
-export function HelpOverlay({ onClose }: Props) {
+export function HelpOverlay({ onClose, t = getStrings("en") }: Props) {
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4"
@@ -20,29 +23,29 @@ export function HelpOverlay({ onClose }: Props) {
         className="w-full max-w-sm rounded-xl border border-[var(--color-edge)] bg-[var(--color-canvas)] p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="font-display text-lg">Shortcuts</h2>
+        <h2 className="font-display text-lg">{t.shortcuts}</h2>
         <dl className="mt-3 space-y-2 text-sm">
-          <Row k="←" v="Back" />
-          <Row k="→" v="Forward" />
-          <Row k="Backspace" v="Back (Shift = forward)" />
-          <Row k="M" v="Toggle map view" />
-          <Row k="T" v="Toggle time-scrubber" />
-          <Row k="K" v="Toggle codex" />
-          <Row k="G" v="Toggle the geometry layer (⊞ geo)" />
-          <Row k="E" v="Look around (bloom neighbours)" />
-          <Row k="/" v="Jump to page…" />
-          <Row k="?" v="This help" />
-          <Row k="Esc" v="Close overlay" />
-          <Row k="Right-click" v="Page menu" />
-          <Row k="⌘/Ctrl-click" v="Click with a note" />
-          <Row k="Shift-drag" v="Circle a region to focus on it" />
+          <Row k="←" v={t.back} />
+          <Row k="→" v={t.forward} />
+          <Row k={t.keyBackspace} v={t.shortcutBackShift} />
+          <Row k="M" v={t.shortcutToggleMap} />
+          <Row k="T" v={t.shortcutToggleScrubber} />
+          <Row k="K" v={t.shortcutToggleCodex} />
+          <Row k="G" v={t.shortcutToggleGeometry} />
+          <Row k="E" v={t.shortcutLookAround} />
+          <Row k="/" v={t.shortcutJump} />
+          <Row k="?" v={t.shortcutHelp} />
+          <Row k={t.keyEscape} v={t.shortcutClose} />
+          <Row k={t.keyRightClick} v={t.shortcutPageMenu} />
+          <Row k={t.keyModifiedClick} v={t.shortcutClickNote} />
+          <Row k={t.keyShiftDrag} v={t.shortcutCircle} />
         </dl>
         <button
           type="button"
           className="mt-4 w-full rounded-md border border-[var(--color-edge)] py-1.5 text-sm hover:bg-[var(--color-ink)]/10"
           onClick={onClose}
         >
-          Close
+          {t.close}
         </button>
       </div>
     </div>

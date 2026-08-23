@@ -1,16 +1,19 @@
 "use client";
 
+import { getStrings, type LocaleStrings } from "@/lib/i18n";
+
 interface Props {
   /** Per-stage status text from the SSE pipeline; falls back to a generic label. */
   statusMsg: string | null;
   onStop: () => void;
+  t?: LocaleStrings;
 }
 
 /**
  * Bottom-of-canvas pill shown while the SSE pipeline is producing a
  * page. Pure visual; the parent decides when to render it.
  */
-export function GeneratingBanner({ statusMsg, onStop }: Props) {
+export function GeneratingBanner({ statusMsg, onStop, t = getStrings("en") }: Props) {
   return (
     <div
       data-testid="generating-banner"
@@ -18,13 +21,13 @@ export function GeneratingBanner({ statusMsg, onStop }: Props) {
     >
       <div className="pointer-events-auto m-4 flex items-center gap-3 rounded-full bg-black/80 px-4 py-2 text-sm text-white shadow-lg">
         <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-white/90" />
-        <span>{statusMsg ?? "Generating…"}</span>
+        <span>{statusMsg ?? t.generatingFirstPage}</span>
         <button
           type="button"
           onClick={onStop}
           className="rounded-full border border-white/40 px-2.5 py-1 text-xs hover:bg-white/15"
         >
-          Stop
+          {t.stop}
         </button>
       </div>
     </div>

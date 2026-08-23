@@ -64,6 +64,12 @@ export async function getMongoClient(): Promise<MongoClient> {
   return current.client;
 }
 
+/** Read-only liveness probe used by core readiness. */
+export async function pingMongo(): Promise<void> {
+  const db = await getDb();
+  await db.command({ ping: 1 }, { timeoutMS: 3_000 });
+}
+
 async function ensureIndexes(db: Db): Promise<void> {
   const nodes = db.collection<NodeDoc>("nodes");
   const errors = db.collection<ErrorDoc>("errors");

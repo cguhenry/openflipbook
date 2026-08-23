@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { OfflineSourceNode } from "./portable-book";
 import { buildPortableBook, portableBookScript } from "./portable-book";
@@ -205,5 +206,17 @@ describe("portable offline manifest", () => {
     const script = portableBookScript(buildPortableBook(rows()));
     expect(script).toContain("window.OPENFLIPBOOK_OFFLINE_BOOK=");
     expect(script).not.toContain("fetch(");
+  });
+
+  it("ships zh-TW offline-player chrome without English fallbacks", () => {
+    const html = readFileSync("public/offline/index.html", "utf8");
+    const player = readFileSync("public/offline/assets/player.js", "utf8");
+    expect(html).toContain('<html lang="zh-TW">');
+    expect(html).toContain("來源（0）");
+    expect(html).not.toContain(">Sources<");
+    expect(player).toContain('"缺少離線書資料。"');
+    expect(player).toContain('"插圖："');
+    expect(player).not.toContain('"Offline book data is missing."');
+    expect(player).not.toContain('"Sources ("');
   });
 });

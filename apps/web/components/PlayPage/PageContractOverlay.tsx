@@ -6,6 +6,7 @@ import type {
   TextBlockV1,
 } from "@openflipbook/config";
 import { citationNumbers } from "@/lib/citation-utils";
+import { formatUi, getStrings, type LocaleStrings } from "@/lib/i18n";
 
 const ANCHOR_CLASS: Record<TextAnchorV1, string> = {
   "top-left": "left-[clamp(.4rem,1.6vw,.75rem)] top-[clamp(.4rem,1.6vw,.75rem)] items-start text-left",
@@ -34,6 +35,7 @@ export interface PageContractOverlayProps {
   /** Pixel rect of the actual object-fit:contain image inside the figure. */
   imageRect?: { offsetX: number; offsetY: number; width: number; height: number } | null;
   showHotspots?: boolean;
+  t?: LocaleStrings;
 }
 
 export function PageContractOverlay({
@@ -41,6 +43,7 @@ export function PageContractOverlay({
   alignedHotspots = [],
   imageRect,
   showHotspots = false,
+  t = getStrings("en"),
 }: PageContractOverlayProps) {
   const frameStyle: CSSProperties | undefined = imageRect
     ? { left: imageRect.offsetX, top: imageRect.offsetY, width: imageRect.width, height: imageRect.height }
@@ -68,7 +71,7 @@ export function PageContractOverlay({
                 key={`${block.id}-source-${number}`}
                 data-source-marker={number}
                 className="ms-0.5 align-super text-[.68em] font-semibold text-[var(--color-ink)]/75"
-                aria-label={`Source ${number}`}
+                aria-label={formatUi(t.sourceNumber, { number })}
               >
                 [{number}]
               </sup>

@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
+const readCoreReadiness = vi.hoisted(() => vi.fn().mockResolvedValue({
+  ok: true,
+  backend: true,
+  mongo: true,
+  minio: true,
+}));
+
+vi.mock("@/lib/readiness", () => ({ readCoreReadiness }));
+
 import { GET } from "../app/api/status/route";
 
 describe("GET /api/status", () => {
@@ -72,6 +81,8 @@ describe("GET /api/status", () => {
     expect(payload.planner_vision_model).toBe("openai/gpt-5.6-luna");
     expect(payload.image_model).toBe("openai/gpt-image-2");
     expect(payload.provider_control).toBe("read_only");
+    expect(payload.mongo_connected).toBe(true);
+    expect(payload.minio_connected).toBe(true);
     expect(payload.alternate_provider_fallback).toBe(false);
     expect(payload.breakers.responses).toEqual({
       state: "open",
@@ -93,5 +104,6 @@ describe("GET /api/status", () => {
         headers: { "x-openflipbook-token": "server-only-token" },
       }),
     );
+    expect(readCoreReadiness).toHaveBeenCalledTimes(1);
   });
 });

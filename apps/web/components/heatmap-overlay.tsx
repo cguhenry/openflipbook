@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getStrings, type LocaleStrings } from "@/lib/i18n";
 
 export interface HeatmapChild {
   id: string;
@@ -15,6 +16,7 @@ interface HeatmapOverlayProps {
   /** Optional injection (e.g. from /atlas where children are already loaded). */
   children?: HeatmapChild[];
   className?: string;
+  t?: LocaleStrings;
 }
 
 interface FetchState {
@@ -26,6 +28,7 @@ export default function HeatmapOverlay({
   parentId,
   children,
   className,
+  t = getStrings("en"),
 }: HeatmapOverlayProps) {
   const [state, setState] = useState<FetchState>(() =>
     children
@@ -146,7 +149,7 @@ export default function HeatmapOverlay({
                   {p.page_title}
                 </span>
                 <span className="block text-[10px] opacity-60">
-                  jump to page
+                  {t.jumpToPage}
                 </span>
               </span>
             )}
@@ -156,12 +159,12 @@ export default function HeatmapOverlay({
 
       {state.status === "loading" && (
         <span className="absolute right-2 top-2 rounded-full bg-black/50 px-2 py-0.5 text-[10px] text-white">
-          loading taps…
+          {t.loadingTaps}
         </span>
       )}
       {state.status === "ready" && points.length === 0 && (
         <span className="absolute right-2 top-2 rounded-full bg-black/50 px-2 py-0.5 text-[10px] text-white">
-          no taps yet
+          {t.noTapsYet}
         </span>
       )}
     </div>

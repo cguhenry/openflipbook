@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { detectLocale, getStrings, isRTL, resolveOutputLocale, SUPPORTED_LOCALES } from "./i18n";
+import {
+  defaultUiLocale,
+  detectLocale,
+  getStrings,
+  isRTL,
+  localizeGenerationError,
+  normalizeLocaleTag,
+  resolveOutputLocale,
+  SUPPORTED_OUTPUT_LOCALES,
+  SUPPORTED_UI_LOCALES,
+} from "./i18n";
 
 function withNavigatorLanguage<T>(lang: string | undefined, fn: () => T): T {
   const orig = Object.getOwnPropertyDescriptor(navigator, "language");
@@ -38,6 +48,12 @@ describe("detectLocale", () => {
       expect(detectLocale()).toBe("auto");
     });
   });
+
+  it("preserves a browser Traditional Chinese preference", () => {
+    withNavigatorLanguage("zh-Hant-TW", () => {
+      expect(detectLocale()).toBe("zh-TW");
+    });
+  });
 });
 
 describe("getStrings", () => {
@@ -57,6 +73,29 @@ describe("getStrings", () => {
     const en = getStrings("xx");
     expect(en.go).toBe("Go");
   });
+
+  it("provides Taiwan Traditional Chinese instead of the existing Simplified catalog", () => {
+    expect(getStrings("zh-TW").settings).toBe("設定");
+    expect(getStrings("zh-TW").upload).toContain("上傳");
+    expect(getStrings("zh").upload).toContain("上传");
+  });
+});
+
+describe("Chinese BCP-47 normalization", () => {
+  it.each([
+    ["zh-TW", "zh-TW"],
+    ["zh-Hant", "zh-TW"],
+    ["zh-Hant-TW", "zh-TW"],
+    ["zh-HK", "zh-TW"],
+    ["zh-MO", "zh-TW"],
+    ["zh-CN", "zh"],
+    ["zh-Hans", "zh"],
+    ["zh-Hans-CN", "zh"],
+    ["zh-SG", "zh"],
+    ["zh", "zh"],
+  ])("normalizes %s to %s", (input, expected) => {
+    expect(normalizeLocaleTag(input)).toBe(expected);
+  });
 });
 
 describe("resolveOutputLocale", () => {
@@ -68,12 +107,37 @@ describe("resolveOutputLocale", () => {
       expect(resolveOutputLocale("auto")).toBe("de");
     });
   });
+
+  it("normalizes Traditional Chinese without collapsing to plain zh", () => {
+    expect(resolveOutputLocale("zh-Hant-TW")).toBe("zh-TW");
+  });
 });
 
-describe("SUPPORTED_LOCALES", () => {
-  it("contains 'auto' and 'en'", () => {
-    expect(SUPPORTED_LOCALES).toContain("auto");
-    expect(SUPPORTED_LOCALES).toContain("en");
+describe("locale contracts", () => {
+  it("has distinct UI/output locale sets with first-class zh-TW", () => {
+    expect(SUPPORTED_UI_LOCALES).not.toBe(SUPPORTED_OUTPUT_LOCALES);
+    expect(SUPPORTED_UI_LOCALES).toContain("zh-TW");
+    expect(SUPPORTED_OUTPUT_LOCALES).toContain("zh-TW");
+  });
+
+  it("defaults the NAS profile to zh-TW while honoring an explicit valid value", () => {
+    expect(defaultUiLocale({ NEXT_PUBLIC_NAS_SLIM: "true" })).toBe("zh-TW");
+    expect(defaultUiLocale({
+      NEXT_PUBLIC_NAS_SLIM: "true",
+      NEXT_PUBLIC_DEFAULT_UI_LOCALE: "fr",
+    })).toBe("fr");
+  });
+});
+
+describe("generation error localization", () => {
+  it("localizes cap and circuit-breaker messages without hiding retry time", () => {
+    const t = getStrings("zh-TW");
+    expect(localizeGenerationError("Runtime generation cap reached.", t)).toContain("產生上限");
+    expect(localizeGenerationError(
+      "OpenClaw is cooling down after repeated failures. Retry in about 42s",
+      t,
+    )).toContain("42 秒");
+    expect(localizeGenerationError("opaque upstream detail", t)).toBe(t.generationFailedRetry);
   });
 });
 

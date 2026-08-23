@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 describe("usePersistedLocale", () => {
-  it("defaults to 'auto' and does not stamp lang/dir on first run", () => {
+  it("defaults to 'auto' and does not control document language", () => {
     const { result } = renderHook(() => usePersistedLocale());
     expect(result.current[0]).toBe("auto");
     // First-run guard: don't clobber storage with "auto" or write attrs.
@@ -39,19 +39,11 @@ describe("usePersistedLocale", () => {
     expect(result.current[0]).toBe("auto");
   });
 
-  it("setting a new locale writes localStorage AND reflects on <html lang/dir> (LTR)", () => {
+  it("setting a new locale writes only the output preference", () => {
     const { result } = renderHook(() => usePersistedLocale());
     act(() => result.current[1]("fr"));
     expect(window.localStorage.getItem(KEY)).toBe("fr");
-    expect(document.documentElement.getAttribute("lang")).toBe("fr");
-    expect(document.documentElement.getAttribute("dir")).toBe("ltr");
-  });
-
-  it("setting an RTL locale flips dir='rtl'", () => {
-    const { result } = renderHook(() => usePersistedLocale());
-    act(() => result.current[1]("ar"));
-    expect(window.localStorage.getItem(KEY)).toBe("ar");
-    expect(document.documentElement.getAttribute("lang")).toBe("ar");
-    expect(document.documentElement.getAttribute("dir")).toBe("rtl");
+    expect(document.documentElement.getAttribute("lang")).toBeNull();
+    expect(document.documentElement.getAttribute("dir")).toBeNull();
   });
 });

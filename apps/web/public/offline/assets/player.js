@@ -3,7 +3,7 @@
 
   var book = window.OPENFLIPBOOK_OFFLINE_BOOK;
   if (!book || !Array.isArray(book.nodes) || !book.nodes.length) {
-    document.body.textContent = "Offline book data is missing.";
+    document.body.textContent = "缺少離線書資料。";
     return;
   }
 
@@ -161,7 +161,7 @@
         marker.className = "source-marker";
         marker.dataset.sourceId = String(id);
         marker.textContent = "[" + (index + 1) + "]";
-        marker.setAttribute("aria-label", "Source " + (index + 1));
+        marker.setAttribute("aria-label", "來源 " + (index + 1));
         span.appendChild(marker);
       });
       textLayer.appendChild(div);
@@ -178,7 +178,7 @@
       return;
     }
     sourcesToggle.hidden = false;
-    sourcesToggle.textContent = "Sources (" + sources.length + ")";
+    sourcesToggle.textContent = "來源（" + sources.length + "）";
     sources.forEach(function (source, index) {
       var item = document.createElement("li");
       var href = safeExternalUrl(source.url);
@@ -214,14 +214,14 @@
       image.removeAttribute("src");
       image.classList.add("is-missing");
     }
-    image.alt = "Illustration: " + (node.title || node.query || "");
+    image.alt = "插圖：" + (node.title || node.query || "");
     renderText(node);
     renderSources(node);
     select.value = node.id;
     status.textContent = node.title || node.query || "";
     back.disabled = trailIndex <= 0;
     forward.disabled = trailIndex >= trail.length - 1;
-    document.title = (node.title || "OpenFlipbook") + " — Offline";
+    document.title = (node.title || "OpenFlipbook") + " — 離線書";
   }
 
   function navigate(id, options) {

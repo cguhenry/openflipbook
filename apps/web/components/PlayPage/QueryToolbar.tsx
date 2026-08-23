@@ -3,7 +3,12 @@
 import type { ChangeEvent, FormEvent, RefObject } from "react";
 import type { Autonomy, ImageTier } from "@openflipbook/config";
 
-import { SUPPORTED_LOCALES, type SupportedLocale, type LocaleStrings } from "@/lib/i18n";
+import {
+  SUPPORTED_OUTPUT_LOCALES,
+  localeDisplayName,
+  type SupportedOutputLocale,
+  type LocaleStrings,
+} from "@/lib/i18n";
 import { THEMES, type Theme } from "@/hooks/usePersistedTheme";
 import type { LoopKnobs } from "@/hooks/useSpeedPreset";
 import { PRODUCT_FLAGS } from "@/lib/product-flags";
@@ -19,8 +24,8 @@ interface Props {
   fileInputRef: RefObject<HTMLInputElement | null>;
   onFileInputChange: (e: ChangeEvent<HTMLInputElement>) => void;
   busy: boolean;
-  outputLocale: SupportedLocale;
-  setOutputLocale: (l: SupportedLocale) => void;
+  outputLocale: SupportedOutputLocale;
+  setOutputLocale: (l: SupportedOutputLocale) => void;
   theme: Theme;
   setTheme: (t: Theme) => void;
   imageTier: ImageTier;
@@ -84,29 +89,29 @@ export function QueryToolbar({
           onClick={() => fileInputRef.current?.click()}
           disabled={busy}
           className="min-h-11 rounded-full border border-[var(--color-edge)] px-4 text-xs hover:bg-[var(--color-ink)]/5 disabled:opacity-40 sm:min-h-0 sm:px-3 sm:py-1"
-          title="Upload an image as the starting page. Tap on it to explore regions."
+          title={t.uploadTitle}
         >
           {t.upload}
         </button>
         {!nasSlim && <select
           value={outputLocale}
-          onChange={(e) => setOutputLocale(e.target.value as SupportedLocale)}
+          onChange={(e) => setOutputLocale(e.target.value as SupportedOutputLocale)}
           disabled={busy}
-          aria-label={t.langLabel}
-          title={t.langLabel}
+          aria-label={t.outputLanguage}
+          title={t.outputLanguage}
           className="rounded-full border border-[var(--color-edge)] bg-transparent px-2 py-1 text-xs disabled:opacity-40"
         >
-          {SUPPORTED_LOCALES.map((loc) => (
+          {SUPPORTED_OUTPUT_LOCALES.map((loc) => (
             <option key={loc} value={loc}>
-              {loc === "auto" ? t.langAuto : loc}
+              {localeDisplayName(loc, t)}
             </option>
           ))}
         </select>}
         {!nasSlim && <div
           role="group"
-          aria-label="Theme"
+          aria-label={t.theme}
           className="flex items-center overflow-hidden rounded-full border border-[var(--color-edge)] text-xs"
-          title="Theme — light / sepia / dark"
+          title={t.themeTitle}
         >
           {THEMES.map((th) => (
             <button

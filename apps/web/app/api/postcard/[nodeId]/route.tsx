@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 
 import { getNode } from "@/lib/db";
 import { readServerEnv } from "@/lib/env";
+import { DEFAULT_UI_LOCALE, normalizeUiLocale } from "@/lib/i18n";
 import { postcardLayout, type PostcardNode } from "@/lib/postcard";
 
 export const runtime = "nodejs";
@@ -25,6 +26,10 @@ export async function GET(req: Request, { params }: Params) {
 
   const publicBase = env.R2_PUBLIC_BASE_URL.replace(/\/$/, "");
   const reqUrl = new URL(req.url);
+  const uiLocale = normalizeUiLocale(
+    reqUrl.searchParams.get("ui_locale") ?? DEFAULT_UI_LOCALE,
+    DEFAULT_UI_LOCALE,
+  );
   const baseUrl = `${reqUrl.protocol}//${reqUrl.host}`;
   const permalink = `${baseUrl}/n/${row.id}`;
 
@@ -39,6 +44,7 @@ export async function GET(req: Request, { params }: Params) {
     title: row.page_title || row.query,
     imageUrl: `${publicBase}/${row.image_key}`,
     citationCount: row.sources.length,
+    locale: uiLocale,
   };
 
   const download = reqUrl.searchParams.get("download") === "1";

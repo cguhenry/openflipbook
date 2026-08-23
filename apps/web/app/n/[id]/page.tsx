@@ -3,7 +3,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getNode, type NodeRow } from "@/lib/db";
 import { readServerEnv } from "@/lib/env";
+import { formatUi, getStrings } from "@/lib/i18n";
 import PermalinkImage from "@/components/permalink-image";
+
+const t = getStrings("zh-TW");
 
 interface PermalinkPageProps {
   params: Promise<{ id: string }>;
@@ -35,13 +38,13 @@ export async function generateMetadata({
   const node = await cachedGetNode(id);
   if (!node) {
     return {
-      title: "Page not found",
+      title: t.pageNotFound,
       robots: { index: false, follow: false },
     };
   }
   const imageUrl = publicImageUrl(node);
-  const title = node.page_title || node.query || "Generated page";
-  const description = `AI-generated page for "${node.query}" — explore openflipbook, an open-source click-to-explore image canvas.`;
+  const title = node.page_title || node.query || t.generatedPage;
+  const description = `${t.generatedPage}：「${node.query}」· OpenFlipbook`;
   return {
     title,
     description,
@@ -55,7 +58,7 @@ export async function generateMetadata({
             images: [
               {
                 url: imageUrl,
-                alt: `Illustration for "${node.query}"`,
+                alt: formatUi(t.generatedIllustrationAlt, { query: node.query }),
               },
             ],
           }
@@ -78,13 +81,11 @@ export default async function PermalinkPage({ params }: PermalinkPageProps) {
   if (!env.MONGODB_URI || !env.MONGODB_DB || !env.R2_PUBLIC_BASE_URL) {
     return (
       <main className="mx-auto flex min-h-dvh max-w-3xl flex-col items-center justify-center px-4 py-16 text-center">
-        <h1 className="text-2xl font-bold">Persistence not configured</h1>
+        <h1 className="text-2xl font-bold">{t.persistenceNotConfigured}</h1>
         <p className="mt-4 opacity-70">
-          Set <code>MONGODB_URI</code>, <code>MONGODB_DB</code> and{" "}
-          <code>R2_*</code> in your environment to enable permalinks. See{" "}
-          <code>docs/BYO-KEYS.md</code>.
+          {t.persistenceHelp}
         </p>
-        <p className="mt-6 text-xs opacity-60">Requested node: <code>{id}</code></p>
+        <p className="mt-6 text-xs opacity-60">{t.requestedNode}：<code>{id}</code></p>
       </main>
     );
   }
@@ -102,7 +103,7 @@ export default async function PermalinkPage({ params }: PermalinkPageProps) {
           href={`/play?continue=${encodeURIComponent(node.session_id)}`}
           className="rounded-full border border-[var(--color-ink)]/40 px-3 py-1 text-xs"
         >
-          Continue this session
+          {t.continueThisSession}
         </a>
       </header>
       <PermalinkImage
@@ -112,7 +113,7 @@ export default async function PermalinkPage({ params }: PermalinkPageProps) {
         sessionId={node.session_id}
       />
       <footer className="text-center text-xs opacity-60">
-        Query: <code>{node.query}</code> · Image: {node.image_model} · Prompt:{" "}
+        {t.queryLabel}：<code>{node.query}</code> · {t.imageLabel}：{node.image_model} · {t.promptLabel}：{" "}
         {node.prompt_author_model}
       </footer>
     </main>

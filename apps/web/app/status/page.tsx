@@ -1,5 +1,6 @@
 import { readServerEnv } from "@/lib/env";
 import { listRecentErrors } from "@/lib/db";
+import { getStrings, type LocaleStrings } from "@/lib/i18n";
 import { modalAuthHeaders } from "@/lib/modal";
 
 export const dynamic = "force-dynamic";
@@ -58,19 +59,19 @@ async function fetchBackendStatus(): Promise<BackendStatus | null> {
   }
 }
 
-function buildRows(env: ReturnType<typeof readServerEnv>): Row[] {
+function buildRows(env: ReturnType<typeof readServerEnv>, t: LocaleStrings): Row[] {
   return [
     {
       key: "MODAL_API_URL",
       required: true,
       ok: Boolean(env.MODAL_API_URL),
-      hint: "Internal URL of the OpenFlipbook backend.",
+      hint: t.backendUrlHint,
     },
     {
       key: "MONGODB_URI + MONGODB_DB",
       required: true,
       ok: Boolean(env.MONGODB_URI && env.MONGODB_DB),
-      hint: "MongoDB connection string + database name for the node graph.",
+      hint: t.mongoConfigHint,
     },
     {
       key: "MinIO / S3 object storage",
@@ -82,14 +83,22 @@ function buildRows(env: ReturnType<typeof readServerEnv>): Row[] {
           env.R2_BUCKET &&
           env.R2_PUBLIC_BASE_URL
       ),
-      hint: "Private object storage for generated images and owner backups.",
+      hint: t.objectStorageHint,
     },
   ];
 }
 
+function breakerLabel(state: string | undefined, t: LocaleStrings): string {
+  if (state === "open") return t.breakerOpen;
+  if (state === "closed") return t.breakerClosed;
+  if (state === "half_open") return t.breakerHalfOpen;
+  return t.unknown;
+}
+
 export default async function StatusPage() {
+  const t = getStrings("zh-TW");
   const env = readServerEnv();
-  const rows = buildRows(env);
+  const rows = buildRows(env, t);
   const allRequired = rows.filter((r) => r.required).every((r) => r.ok);
 
   const [backend, recentErrors] = await Promise.all([
@@ -101,10 +110,9 @@ export default async function StatusPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      <h1 className="text-3xl font-bold">Environment status</h1>
+      <h1 className="text-3xl font-bold">{t.environmentStatus}</h1>
       <p className="mt-2 text-sm opacity-70">
-        Checks the server-side env this deploy is running with. Client secrets
-        not shown.
+        {t.environmentStatusHelp}
       </p>
 
       <div
@@ -115,8 +123,8 @@ export default async function StatusPage() {
         }`}
       >
         {allRequired
-          ? "All required NAS services are configured."
-          : "Some required NAS service configuration is missing."}
+          ? t.allServicesConfigured
+          : t.missingServiceConfiguration}
       </div>
 
       <ul className="mt-6 space-y-3">
@@ -138,86 +146,86 @@ export default async function StatusPage() {
                     : "bg-gray-300 text-black"
               }`}
             >
-              {r.ok ? "set" : r.required ? "missing" : "not set"}
+              {r.ok ? t.set : r.required ? t.missing : t.notSet}
             </span>
           </li>
         ))}
       </ul>
 
-      <h2 className="mt-10 text-xl font-semibold">Backend health</h2>
+      <h2 className="mt-10 text-xl font-semibold">{t.backendHealth}</h2>
       {!backend ? (
         <p className="mt-2 text-sm opacity-70">
-          MODAL_API_URL not set; backend health check skipped.
+          {t.backendNotConfigured}
         </p>
       ) : backend.error ? (
         <p className="mt-2 text-sm text-red-700">
-          Backend unreachable: {backend.error}
+          {t.backendUnreachable}
         </p>
       ) : (
         <ul className="mt-3 grid grid-cols-2 gap-2 text-sm">
           <li>
             OpenClaw:{" "}
             <span className={backend.openclaw_connected ? "text-green-700" : "text-amber-700"}>
-              {backend.openclaw_connected ? "connected" : "unavailable"}
+              {backend.openclaw_connected ? t.connected : t.unavailable}
             </span>
           </li>
           <li>
             SearXNG:{" "}
             <span className={backend.searxng_connected ? "text-green-700" : "text-amber-700"}>
-              {backend.searxng_connected ? "connected" : "unavailable"}
+              {backend.searxng_connected ? t.connected : t.unavailable}
             </span>
           </li>
-          <li>planner/vision: <code>{backend.planner_vision_model ?? "openai/gpt-5.6-luna"}</code></li>
-          <li>image: <code>{backend.image_model ?? "openai/gpt-image-2"}</code></li>
-          <li>provider: <code>{backend.live_provider ?? "unknown"}</code></li>
-          <li>mode: <code>{backend.provider_mode ?? "unknown"}</code>{backend.mock_mode ? " (mock)" : ""}</li>
+          <li>{t.plannerVision}: <code>{backend.planner_vision_model ?? "openai/gpt-5.6-luna"}</code></li>
+          <li>{t.imageModel}: <code>{backend.image_model ?? "openai/gpt-image-2"}</code></li>
+          <li>{t.provider}: <code>{backend.live_provider ?? t.unknown}</code></li>
+          <li>{t.mode}: <code>{backend.provider_mode ?? t.unknown}</code>{backend.mock_mode ? ` (${t.mock})` : ""}</li>
           <li>
             Mongo:{" "}
             <span className={backend.mongo_connected === false ? "text-amber-700" : "text-green-700"}>
-              {backend.mongo_connected === false ? "unavailable" : backend.mongo_connected === true ? "connected" : "configured"}
+              {backend.mongo_connected === false ? t.unavailable : backend.mongo_connected === true ? t.connected : t.configured}
             </span>
           </li>
           <li>
             MinIO:{" "}
             <span className={backend.minio_connected === false ? "text-amber-700" : "text-green-700"}>
-              {backend.minio_connected === false ? "unavailable" : backend.minio_connected === true ? "connected" : "configured"}
+              {backend.minio_connected === false ? t.unavailable : backend.minio_connected === true ? t.connected : t.configured}
             </span>
           </li>
-          <li>provider control: <code>read-only</code></li>
-          <li>fallback: <code>{backend.alternate_provider_fallback ? "unexpectedly enabled" : "none"}</code></li>
+          <li>{t.providerControl}: <code>{t.readOnly}</code></li>
+          <li>{t.fallback}: <code>{backend.alternate_provider_fallback ? t.unexpectedlyEnabled : t.none}</code></li>
           <li>
-            responses breaker: <code>{backend.breakers?.responses?.state ?? "unknown"}</code>
+            {t.responsesBreaker}: <code>{breakerLabel(backend.breakers?.responses?.state, t)}</code>
             {backend.breakers?.responses?.retry_after_seconds
               ? ` (${backend.breakers.responses.retry_after_seconds}s)`
               : ""}
           </li>
           <li>
-            image breaker: <code>{backend.breakers?.image?.state ?? "unknown"}</code>
+            {t.imageBreaker}: <code>{breakerLabel(backend.breakers?.image?.state, t)}</code>
             {backend.breakers?.image?.retry_after_seconds
               ? ` (${backend.breakers.image.retry_after_seconds}s)`
               : ""}
           </li>
-          <li>generations: {backend.usage?.counters?.generation_requests ?? 0}</li>
-          <li>successful: {backend.usage?.counters?.generation_success ?? 0}</li>
-          <li>failed: {backend.usage?.counters?.generation_failed ?? 0}</li>
-          <li>cancelled: {backend.usage?.counters?.generation_cancelled ?? 0}</li>
-          <li>planner calls: {backend.usage?.counters?.planner_calls ?? 0}</li>
-          <li>alignment calls: {backend.usage?.counters?.alignment_calls ?? 0}</li>
-          <li>image calls: {backend.usage?.counters?.image_calls ?? 0}</li>
+          <li>{t.generations}: {backend.usage?.counters?.generation_requests ?? 0}</li>
+          <li>{t.successful}: {backend.usage?.counters?.generation_success ?? 0}</li>
+          <li>{t.failed}: {backend.usage?.counters?.generation_failed ?? 0}</li>
+          <li>{t.cancelled}: {backend.usage?.counters?.generation_cancelled ?? 0}</li>
+          <li>{t.plannerCalls}: {backend.usage?.counters?.planner_calls ?? 0}</li>
+          <li>{t.alignmentCalls}: {backend.usage?.counters?.alignment_calls ?? 0}</li>
+          <li>{t.imageCalls}: {backend.usage?.counters?.image_calls ?? 0}</li>
           <li className="col-span-2 opacity-70">
-            Usage scope: {backend.usage?.scope ?? "since backend start"}; caps runtime {backend.usage?.caps?.runtime_generations || "unlimited"}, session {backend.usage?.caps?.session_generations || "unlimited"}.
+            {t.usage}: {t.sinceBackendStart}；{t.caps} {t.runtimeCap} {backend.usage?.caps?.runtime_generations || t.unlimited}、{t.sessionCap} {backend.usage?.caps?.session_generations || t.unlimited}。
           </li>
-          <li>uptime: {backend.uptime_s ?? "—"}s</li>
-          <li>in-flight: {backend.in_flight ?? 0}</li>
+          <li>{t.uptime}: {backend.uptime_s ?? "—"} 秒</li>
+          <li>{t.inFlight}: {backend.in_flight ?? 0}</li>
           <li className="col-span-2 opacity-70">
-            version <code>{backend.version ?? "dev"}</code>
+            {t.version} <code>{backend.version ?? "dev"}</code>
           </li>
         </ul>
       )}
 
-      <h2 className="mt-10 text-xl font-semibold">Recent errors</h2>
+      <h2 className="mt-10 text-xl font-semibold">{t.recentErrors}</h2>
       {recentErrors.length === 0 ? (
-        <p className="mt-2 text-sm opacity-70">No errors logged.</p>
+        <p className="mt-2 text-sm opacity-70">{t.noErrorsLogged}</p>
       ) : (
         <ul className="mt-3 space-y-2 text-xs">
           {recentErrors.map((e, i) => (
@@ -239,7 +247,7 @@ export default async function StatusPage() {
       )}
 
       <p className="mt-8 text-sm">
-        See <code>docs/BYO-KEYS.md</code> for the full setup walkthrough.
+        {t.operationsDocs}
       </p>
     </main>
   );

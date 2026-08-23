@@ -25,6 +25,8 @@ import HeatmapOverlay from "@/components/heatmap-overlay";
 import { anchorForTile } from "@/lib/atlas-anchors";
 import { clamp } from "@/lib/clamp";
 import { nodeKind, NODE_KIND_LEGEND } from "@/lib/node-kind";
+import { usePersistedUiLocale } from "@/hooks/usePersistedUiLocale";
+import { formatUi, getStrings, type LocaleStrings } from "@/lib/i18n";
 import type {
   NodeRelation,
   ScaleKind,
@@ -117,6 +119,8 @@ export default function AtlasView({
   sceneViews,
   geoMap,
 }: AtlasViewProps) {
+  const [uiLocale] = usePersistedUiLocale();
+  const t = useMemo(() => getStrings(uiLocale), [uiLocale]);
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ w: 1280, h: 720 });
   const [camera, setCamera] = useState<Camera>({ cx: 0, cy: 0, zoom: 1 });
@@ -401,15 +405,15 @@ export default function AtlasView({
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-ink)]/15 px-4 py-2 text-sm">
         <div className="flex items-center gap-3">
           <Link
-            href="/"
+            href="/play"
             className="rounded-full border border-[var(--color-ink)]/30 px-2 py-0.5 text-xs hover:bg-[var(--color-ink)]/5"
           >
-            ← home
+            ← {t.home}
           </Link>
           <h1 className="font-display text-base font-bold">
-            atlas — <span className="opacity-70">{rootTitle}</span>
+            {t.atlas} — <span className="opacity-70">{rootTitle}</span>
           </h1>
-          <span className="text-xs opacity-60">{total} pages</span>
+          <span className="text-xs opacity-60">{formatUi(t.pagesCount, { count: total })}</span>
         </div>
         <div className="flex items-center gap-2 text-xs">
           <button
@@ -417,7 +421,7 @@ export default function AtlasView({
             onClick={() => focusOn(null, true)}
             className="rounded-full border border-[var(--color-ink)]/30 px-3 py-1 hover:bg-[var(--color-ink)]/5"
           >
-            fit all
+            {t.fitAll}
           </button>
           {focusedId && (
             <button
@@ -425,19 +429,19 @@ export default function AtlasView({
               onClick={() => focusOn(focusedId, true)}
               className="rounded-full border border-[var(--color-ink)]/30 px-3 py-1 hover:bg-[var(--color-ink)]/5"
             >
-              recenter focus
+              {t.recenterFocus}
             </button>
           )}
           <Link
             href={`/play?continue=${encodeURIComponent(sessionId)}`}
             className="rounded-full bg-[var(--color-ink)] px-3 py-1 text-[var(--color-canvas)]"
           >
-            continue session
+            {t.continueSession}
           </Link>
           <div
             className="flex items-center gap-2 pl-1 opacity-60"
             data-testid="atlas-legend"
-            title="Tile frame colour = view level · ↓ inside (tap-in) · ⤢ expanded (neighbour) · ✎ edited (revision)"
+            title={t.tileLegendTitle}
           >
             {NODE_KIND_LEGEND.map((lv) => (
               <span key={lv.label} className="flex items-center gap-0.5">
@@ -445,7 +449,7 @@ export default function AtlasView({
                   className="inline-block h-2 w-2 rounded-sm"
                   style={{ backgroundColor: lv.color }}
                 />
-                {lv.glyph}&nbsp;{lv.label}
+                {lv.glyph}&nbsp;{localizedNodeLabel(lv.label, t)}
               </span>
             ))}
           </div>
@@ -668,7 +672,7 @@ export default function AtlasView({
                     filter: `saturate(${tint.saturation})`,
                     opacity: isFocused ? 1 : tint.opacity * lodFactor,
                   }}
-                  title={`${p.title} — click to open · shift-click to focus`}
+                  title={formatUi(t.openPageTitle, { title: p.title })}
                 >
                   {p.imageDataUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -681,7 +685,7 @@ export default function AtlasView({
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-xs opacity-50">
-                      (loading)
+                      ({t.loading})
                     </div>
                   )}
                 </button>
@@ -689,12 +693,14 @@ export default function AtlasView({
                 {entitiesByNode.get(p.nodeId)?.length ? (
                   <div
                     className="pointer-events-none absolute bottom-1 left-1 z-10 flex flex-wrap gap-0.5"
-                    aria-label={`${entitiesByNode.get(p.nodeId)?.length ?? 0} entities on this page`}
+                    aria-label={formatUi(t.entitiesOnPage, {
+                      count: entitiesByNode.get(p.nodeId)?.length ?? 0,
+                    })}
                   >
                     {entitiesByNode.get(p.nodeId)!.map((e) => (
                       <span
                         key={e.id}
-                        title={`${e.name} (${e.kind})`}
+                        title={`${e.name} (${localizedEntityKind(e.kind, t)})`}
                         className={
                           "block h-2 w-2 rounded-full ring-1 ring-white/80 " +
                           atlasPinTint(e.kind)
@@ -709,9 +715,11 @@ export default function AtlasView({
                     className="pointer-events-none absolute left-1 top-1 z-10 flex items-center gap-1 rounded bg-black/55 px-1 py-0.5 text-[9px] font-medium text-white"
                     title={
                       anchor.neighbors.length
-                        ? `near: ${anchor.neighbors
-                            .map((n) => geoById.get(n.id) ?? n.id)
-                            .join(", ")}`
+                        ? formatUi(t.nearEntities, {
+                            names: anchor.neighbors
+                              .map((n) => geoById.get(n.id) ?? n.id)
+                              .join(", "),
+                          })
                         : undefined
                     }
                   >
@@ -736,7 +744,7 @@ export default function AtlasView({
                 <div
                   className="pointer-events-none absolute right-1 top-1 z-10 flex items-center gap-1 rounded bg-black/55 px-1 py-0.5 text-[9px] font-medium text-white"
                   data-testid="tile-kind"
-                  title={`${kind.levelLabel} · ${kind.relLabel}${depth > 0 ? ` · depth ${depth}` : ""}`}
+                  title={`${localizedNodeLabel(kind.levelLabel, t)} · ${localizedNodeLabel(kind.relLabel, t)}${depth > 0 ? ` · ${t.depth} ${depth}` : ""}`}
                   style={{
                     // Counter the camera zoom so the badge stays legible at the
                     // fit-all overview (otherwise it's a sub-pixel smudge there).
@@ -746,12 +754,12 @@ export default function AtlasView({
                 >
                   <span>{kind.levelGlyph}</span>
                   <span className="opacity-80">
-                    {kind.relGlyph} {kind.relLabel}
+                    {kind.relGlyph} {localizedNodeLabel(kind.relLabel, t)}
                   </span>
                   {depth > 0 && <span className="opacity-60">d{depth}</span>}
                 </div>
 
-                {showHeatmap && <HeatmapOverlay parentId={p.nodeId} />}
+                {showHeatmap && <HeatmapOverlay parentId={p.nodeId} t={t} />}
 
                 {hoveredId === p.nodeId && node && (
                   <div
@@ -763,26 +771,26 @@ export default function AtlasView({
                     }}
                   >
                     <div className="text-xs uppercase tracking-wide opacity-50">
-                      depth {depth}
+                      {t.depth} {depth}
                       {p.parentId
                         ? ` · ${
                             (p.relation ?? "descend") === "edit"
-                              ? "edited from"
+                              ? t.editedFrom
                               : isExpand
-                                ? "expanded from"
-                                : "child of"
+                                ? t.expandedFrom
+                                : t.childOf
                           } ${truncate(byId.get(p.parentId)?.title ?? "?", 40)}`
-                        : " · root"}
-                      {p.scale && p.scale !== "peer" ? ` · ${p.scale}` : ""}
+                        : ` · ${t.nodeRoot}`}
+                      {p.scale && p.scale !== "peer" ? ` · ${localizedScale(p.scale, t)}` : ""}
                     </div>
                     <div className="mt-1 font-display text-base font-bold leading-tight">
                       {node.title}
                     </div>
                     <div className="mt-1 text-xs opacity-70">
-                      query: {truncate(node.query, 80)}
+                      {t.queryLabel}：{truncate(node.query, 80)}
                     </div>
                     <div className="mt-1 text-[10px] opacity-50">
-                      {fmt(node.createdAt)} · {node.imageModel}
+                      {fmt(node.createdAt, uiLocale === "auto" ? undefined : uiLocale)} · {node.imageModel}
                     </div>
                   </div>
                 )}
@@ -801,16 +809,16 @@ export default function AtlasView({
                       setHeatmapId((cur) => (cur === p.nodeId ? null : p.nodeId));
                     }}
                     className="rounded-full border border-black/30 bg-white px-2 py-0.5 text-black shadow hover:bg-black hover:text-white"
-                    title="Show where children were tapped"
+                    title={t.showChildTapsTitle}
                   >
-                    {showHeatmap ? "hide taps" : "show taps"}
+                    {showHeatmap ? t.hideTaps : t.showTaps}
                   </button>
                   <Link
                     href={`/n/${encodeURIComponent(p.nodeId)}`}
                     onClick={(e) => e.stopPropagation()}
                     className="rounded-full border border-black/30 bg-white px-2 py-0.5 text-black shadow hover:bg-black hover:text-white"
                   >
-                    open
+                    {t.open}
                   </Link>
                 </div>
               </div>
@@ -824,7 +832,7 @@ export default function AtlasView({
             className="relative cursor-pointer"
             style={{ width: MM_W, height: MM_H }}
             onClick={onMinimapClick}
-            title="click to pan"
+            title={t.clickToPan}
           >
             {laid.map((p) => (
               <div
@@ -863,7 +871,7 @@ export default function AtlasView({
         </div>
 
         <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center text-[11px] opacity-60">
-          scroll to zoom · drag to pan · click a tile to open · shift-click to focus
+          {t.atlasInstructions}
         </div>
       </div>
     </main>
@@ -876,9 +884,38 @@ function truncate(s: string, n: number): string {
   return s.slice(0, n - 1) + "…";
 }
 
-function fmt(iso: string): string {
+function localizedNodeLabel(label: string, t: LocaleStrings): string {
+  const labels: Record<string, string> = {
+    map: t.nodeMap,
+    building: t.nodeBuilding,
+    street: t.nodeStreet,
+    scene: t.nodeScene,
+    page: t.nodePage,
+    root: t.nodeRoot,
+    expanded: t.nodeExpanded,
+    container: t.nodeContainer,
+    edited: t.nodeEdited,
+    inside: t.nodeInside,
+  };
+  return labels[label] ?? label;
+}
+
+function localizedEntityKind(kind: AtlasEntity["kind"], t: LocaleStrings): string {
+  if (kind === "person") return t.entityPerson;
+  if (kind === "place") return t.entityPlace;
+  if (kind === "item") return t.entityItem;
+  return t.entityCreature;
+}
+
+function localizedScale(scale: ScaleKind, t: LocaleStrings): string {
+  if (scale === "component") return t.scalePart;
+  if (scale === "container") return t.scaleAround;
+  return t.scaleBeside;
+}
+
+function fmt(iso: string, locale?: string): string {
   try {
-    return new Date(iso).toLocaleString(undefined, {
+    return new Date(iso).toLocaleString(locale, {
       dateStyle: "short",
       timeStyle: "short",
     });

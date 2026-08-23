@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { modalAuthHeaders, modalUrl as joinModalUrl } from "@/lib/modal";
+import { readCoreReadiness } from "@/lib/readiness";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,25 +64,35 @@ function safeUsage(value: unknown) {
 
 export async function GET() {
   const modalUrl = process.env.MODAL_API_URL;
+  const readinessPromise = readCoreReadiness();
   if (!modalUrl) {
+    const readiness = await readinessPromise;
     return NextResponse.json(
-      { ok: false, error: "MODAL_API_URL not set" },
+      {
+        ok: false,
+        error: "backend_not_configured",
+        mongo_connected: readiness.mongo,
+        minio_connected: readiness.minio,
+      },
       { status: 503 }
     );
   }
   try {
-    const upstream = await fetch(joinModalUrl(modalUrl, "/status"), {
-      method: "GET",
-      cache: "no-store",
-      headers: modalAuthHeaders(),
-      signal: AbortSignal.timeout(4000),
-    });
+    const [readiness, upstream] = await Promise.all([
+      readinessPromise,
+      fetch(joinModalUrl(modalUrl, "/status"), {
+        method: "GET",
+        cache: "no-store",
+        headers: modalAuthHeaders(),
+        signal: AbortSignal.timeout(4000),
+      }),
+    ]);
     const raw = (await upstream.json().catch(() => null)) as Record<string, unknown> | null;
     const providers = raw?.providers as Record<string, unknown> | undefined;
     const breakers = raw?.breakers as Record<string, unknown> | undefined;
     return NextResponse.json(
       {
-        ok: raw?.ok === true,
+        ok: raw?.ok === true && readiness.ok,
         live_provider: typeof raw?.live_provider === "string" ? raw.live_provider : "unknown",
         provider_mode: typeof raw?.provider_mode === "string" ? raw.provider_mode : "unknown",
         openclaw_connected: raw?.openclaw_connected === true,
@@ -92,8 +103,8 @@ export async function GET() {
         image_model:
           typeof raw?.image_model === "string" ? raw.image_model : "openai/gpt-image-2",
         searxng_connected: raw?.searxng_connected === true,
-        mongo_connected: raw?.mongo_connected === true ? true : raw?.mongo_connected === false ? false : null,
-        minio_connected: raw?.minio_connected === true ? true : raw?.minio_connected === false ? false : null,
+        mongo_connected: readiness.mongo,
+        minio_connected: readiness.minio,
         mock_mode: raw?.mock_mode === true,
         providers: raw?.live_provider === "openclaw"
           ? { openclaw: providers?.openclaw === true }
@@ -110,13 +121,16 @@ export async function GET() {
         },
         usage: safeUsage(raw?.usage),
       },
-      { status: upstream.status },
+      { status: upstream.ok && readiness.ok ? 200 : 503 },
     );
   } catch {
+    const readiness = await readinessPromise;
     return NextResponse.json(
       {
         ok: false,
         error: "status_unreachable",
+        mongo_connected: readiness.mongo,
+        minio_connected: readiness.minio,
       },
       { status: 502 }
     );

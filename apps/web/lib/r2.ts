@@ -1,6 +1,7 @@
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadBucketCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -50,6 +51,15 @@ function r2Client(): { s3: S3Client; bucket: string; publicBaseUrl: string } {
     bucket: r2.bucket,
     publicBaseUrl: r2.publicBaseUrl.replace(/\/$/, ""),
   };
+}
+
+/** Read-only, bucket-level probe used by core readiness. */
+export async function probeR2Bucket(): Promise<void> {
+  const { s3, bucket } = r2Client();
+  await s3.send(
+    new HeadBucketCommand({ Bucket: bucket }),
+    { abortSignal: AbortSignal.timeout(3_000) },
+  );
 }
 
 export interface UploadedObject {

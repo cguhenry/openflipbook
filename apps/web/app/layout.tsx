@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { DEFAULT_UI_LOCALE } from "@/lib/i18n";
 import "./globals.css";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://openflipbook.dev";
@@ -60,8 +61,9 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  const initialLang = DEFAULT_UI_LOCALE === "auto" ? "en" : DEFAULT_UI_LOCALE;
   return (
-    <html lang="en" data-theme="light" suppressHydrationWarning>
+    <html lang={initialLang} data-theme="light" suppressHydrationWarning>
       <head>
         <link
           href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"

@@ -2,12 +2,14 @@
 
 import { useMemo } from "react";
 import { layoutPages, type LayoutInput } from "@/lib/world-layout";
+import { getStrings, type LocaleStrings } from "@/lib/i18n";
 
 interface SessionMinimapProps {
   pages: LayoutInput[];
   activeNodeId: string | null;
   onExpand: () => void;
   onJump: (nodeId: string) => void;
+  t?: LocaleStrings;
 }
 
 const W = 180;
@@ -18,6 +20,7 @@ export default function SessionMinimap({
   activeNodeId,
   onExpand,
   onJump,
+  t = getStrings("en"),
 }: SessionMinimapProps) {
   const filtered = useMemo(
     () =>
@@ -54,14 +57,14 @@ export default function SessionMinimap({
   return (
     <div className="pointer-events-auto fixed bottom-4 right-4 z-30 rounded-xl border border-[var(--color-ink)]/30 bg-[var(--color-canvas)]/85 p-1.5 shadow-xl backdrop-blur">
       <div className="mb-1 flex items-center justify-between gap-2 px-1 text-[10px] uppercase tracking-wide opacity-60">
-        <span>session</span>
+        <span>{t.sessionMap}</span>
         <button
           type="button"
           onClick={onExpand}
           className="rounded-full border border-[var(--color-ink)]/30 px-2 py-0.5 text-[10px] hover:bg-[var(--color-ink)]/10"
-          title="Open the full map (M)"
+          title={t.openFullMap}
         >
-          expand
+          {t.expand}
         </button>
       </div>
       <div
@@ -110,7 +113,7 @@ export default function SessionMinimap({
           );
         })}
       </div>
-      <div className="mt-1 px-1 text-[10px] opacity-50">{laid.length} pages</div>
+      <div className="mt-1 px-1 text-[10px] opacity-50">{laid.length} {laid.length === 1 ? t.pageSingular : t.pagePlural}</div>
     </div>
   );
 }

@@ -1,10 +1,13 @@
 "use client";
 
+import { getStrings, type LocaleStrings } from "@/lib/i18n";
+
 interface Props {
   /** Increment per rejected tap so React remounts and the fade restarts. */
   nudgeKey: string | number;
   xPx: number;
   yPx: number;
+  t?: LocaleStrings;
 }
 
 /**
@@ -13,7 +16,7 @@ interface Props {
  * so a tap on open sky / water / blank margin nudges instead of burning a
  * generation on a confabulated page. Pure visual; auto-fades via CSS.
  */
-export function BlankTapNudge({ nudgeKey, xPx, yPx }: Props) {
+export function BlankTapNudge({ nudgeKey, xPx, yPx, t = getStrings("en") }: Props) {
   return (
     <span
       key={nudgeKey}
@@ -25,7 +28,7 @@ export function BlankTapNudge({ nudgeKey, xPx, yPx }: Props) {
         animation: "ec-nudge 1.6s ease-out forwards",
       }}
     >
-      nothing to explore here
+      {t.nothingToExplore}
     </span>
   );
 }

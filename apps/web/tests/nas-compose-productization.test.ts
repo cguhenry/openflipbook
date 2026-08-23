@@ -7,6 +7,11 @@ const compose = readFileSync(
   "utf8",
 );
 const playPage = readFileSync(resolve(process.cwd(), "app/play/page.tsx"), "utf8");
+const landingPage = readFileSync(resolve(process.cwd(), "app/page.tsx"), "utf8");
+const webDockerfile = readFileSync(
+  resolve(process.cwd(), "Dockerfile"),
+  "utf8",
+);
 
 describe("NAS compose product defaults", () => {
   it("keeps the fixed OpenClaw path with zero-default operational caps", () => {
@@ -20,6 +25,13 @@ describe("NAS compose product defaults", () => {
     expect(compose).toContain("NEXT_PUBLIC_OFFLINE_EXPORT:-true");
     expect(compose).toContain("NEXT_PUBLIC_VIDEO:-false");
     expect(compose).toContain("NEXT_PUBLIC_AI_PREFETCH:-false");
+  });
+
+  it("defaults NAS UI to zh-TW and gates Web health on core readiness", () => {
+    expect(compose).toContain("NEXT_PUBLIC_DEFAULT_UI_LOCALE:-zh-TW");
+    expect(webDockerfile).toContain("ARG NEXT_PUBLIC_DEFAULT_UI_LOCALE");
+    expect(compose).toContain("http://127.0.0.1:3000/api/ready");
+    expect(landingPage).toContain('if (PRODUCT_FLAGS.nasSlim) redirect("/play")');
   });
 
   it("neutralizes hidden legacy request knobs on the NAS request path", () => {

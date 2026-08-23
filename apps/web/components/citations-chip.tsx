@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { Citation, SourceRefV1 } from "@openflipbook/config";
 import { safeExternalUrl } from "@/lib/citation-utils";
+import { formatUi, getStrings, type LocaleStrings } from "@/lib/i18n";
 
 interface CitationsChipProps {
   sources: Array<Citation | SourceRefV1>;
+  t?: LocaleStrings;
 }
 
-export default function CitationsChip({ sources }: CitationsChipProps) {
+export default function CitationsChip({ sources, t = getStrings("en") }: CitationsChipProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -39,8 +41,8 @@ export default function CitationsChip({ sources }: CitationsChipProps) {
     >
       <button
         type="button"
-        aria-label={`${sources.length} source${sources.length === 1 ? "" : "s"}`}
-        title={`${sources.length} source${sources.length === 1 ? "" : "s"}`}
+        aria-label={formatUi(t.sourcesAria, { count: sources.length })}
+        title={formatUi(t.sourcesAria, { count: sources.length })}
         onClick={(e) => {
           e.stopPropagation();
           setOpen((v) => !v);
@@ -48,11 +50,11 @@ export default function CitationsChip({ sources }: CitationsChipProps) {
         className="flex items-center gap-1 rounded-full border border-[var(--color-ink)]/30 bg-[var(--color-paper)]/80 px-2.5 py-1 text-xs font-medium text-[var(--color-ink)] backdrop-blur transition hover:bg-[var(--color-paper)]"
       >
         <span aria-hidden>📎</span>
-        <span>Sources ({sources.length})</span>
+        <span>{formatUi(t.sourcesCount, { count: sources.length })}</span>
       </button>
       {open && (
         <div className="absolute end-0 bottom-[calc(100%+0.5rem)] w-72 max-w-[80vw] rounded-xl border border-[var(--color-ink)]/20 bg-[var(--color-paper)] p-2 text-xs shadow-lg">
-          <p className="px-1 pb-1 opacity-60">Sources the planner used</p>
+          <p className="px-1 pb-1 opacity-60">{t.sourcesUsed}</p>
           <ul className="flex flex-col gap-1">
             {sources.map((s, i) => {
               const host = safeHost(s.url);

@@ -1,6 +1,7 @@
 "use client";
 
 import { BloomGlyph } from "./BloomGlyph";
+import { getStrings, type LocaleStrings } from "@/lib/i18n";
 
 export type FirstRunCoachVariant = "pre" | "post";
 
@@ -18,6 +19,7 @@ interface Props {
   /** When wired, renders a small × that retires the coach for good (persisted).
    *  Absent → no dismiss control, so existing call sites are byte-unchanged. */
   onDismiss?: () => void;
+  t?: LocaleStrings;
 }
 
 /**
@@ -33,6 +35,7 @@ export function FirstRunCoach({
   enterHintActionable = false,
   variant = "post",
   onDismiss,
+  t = getStrings("en"),
 }: Props) {
   return (
     <div
@@ -44,32 +47,32 @@ export function FirstRunCoach({
         {variant === "pre" ? (
           <>
             <span className="whitespace-nowrap opacity-80">
-              Ask anything above — I&apos;ll draw the first page
+              {t.coachAsk}
             </span>
             <span className="opacity-40">·</span>
             <span className="whitespace-nowrap opacity-80">
-              then tap anywhere to go deeper
+              {t.coachThenTap}
             </span>
           </>
         ) : (
           <>
             {/* The two moves, side by side, so the in/around duality is obvious. */}
-            <span className="whitespace-nowrap opacity-80">Tap to go in</span>
+            <span className="whitespace-nowrap opacity-80">{t.coachTapIn}</span>
             <span className="opacity-40">·</span>
             {worldHint && (
               <>
                 <span className="flex items-center gap-1.5 whitespace-nowrap opacity-80">
                   <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-emerald-600/70" />
                   {enterHintActionable
-                    ? "tap a glowing place, tap again to enter"
-                    : "rings = enterable places"}
+                    ? t.coachGlow
+                    : t.coachRings}
                 </span>
                 <span className="opacity-40">·</span>
               </>
             )}
             <span className="flex items-center gap-1.5 whitespace-nowrap opacity-80">
               <BloomGlyph className="h-3.5 w-3.5 text-teal-600" />
-              around
+              {t.coachAround}
               <kbd className="rounded border border-[var(--color-edge)] px-1 font-mono text-[10px]">
                 E
               </kbd>
@@ -77,26 +80,26 @@ export function FirstRunCoach({
             <span className="opacity-40">·</span>
             <button
               type="button"
-              aria-label="shortcuts"
+              aria-label={t.coachShortcuts}
               onClick={onShowHelp}
               className="rounded-full border border-[var(--color-edge)] px-2 py-0.5 font-mono text-xs hover:bg-[var(--color-ink)]/10"
-              title="Show all shortcuts"
+              title={t.showShortcuts}
             >
               ?
             </button>
-            <span className="whitespace-nowrap opacity-80">shortcuts</span>
+            <span className="whitespace-nowrap opacity-80">{t.coachShortcuts}</span>
             <span className="opacity-40">·</span>
             <span className="font-mono text-xs opacity-80">T</span>
-            <span className="opacity-80">scrubber</span>
+            <span className="opacity-80">{t.coachScrubber}</span>
           </>
         )}
         {onDismiss && (
           <button
             type="button"
-            aria-label="dismiss"
+            aria-label={t.dismiss}
             onClick={onDismiss}
             className="ml-0.5 rounded-full px-1.5 leading-none opacity-50 hover:opacity-90"
-            title="Dismiss"
+            title={t.dismiss}
           >
             ×
           </button>

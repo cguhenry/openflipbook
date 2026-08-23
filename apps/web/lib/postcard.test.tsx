@@ -57,4 +57,13 @@ describe("postcardLayout", () => {
     );
     expect(out).toMatch(/dir="rtl"/);
   });
+
+  it("localizes citation chrome without changing generated title text", () => {
+    const out = renderToStaticMarkup(
+      postcardLayout({ ...node, locale: "zh-TW" }, baseUrl, qr),
+    );
+    expect(out).toContain(node.title);
+    expect(out).toMatch(/3\s*個來源/);
+    expect(out).not.toMatch(/3\s*sources/);
+  });
 });

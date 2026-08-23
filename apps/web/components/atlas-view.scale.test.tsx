@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 
 import type { SceneView } from "@openflipbook/config";
 
 import AtlasView, { type AtlasNode } from "./atlas-view";
+
+afterEach(() => window.localStorage.clear());
 
 /**
  * M3 phase 2 — the scale-space data path through the atlas. These prove the
@@ -111,5 +113,21 @@ describe("AtlasView scale-space rendering (M3 phase 2)", () => {
       <AtlasView sessionId="s1" nodes={nodes} latestNodeId="big" rootTitle="root" />,
     );
     expect(tileWidth(container, "big")).toBeGreaterThan(tileWidth(container, "peer"));
+  });
+
+  it("renders normal atlas controls in the persisted zh-TW UI locale", () => {
+    window.localStorage.setItem("openflipbook.uiLocale", "zh-TW");
+    const { container } = render(
+      <AtlasView
+        sessionId="s1"
+        nodes={[node({ id: "root" })]}
+        latestNodeId="root"
+        rootTitle="根頁"
+      />,
+    );
+    expect(container.textContent).toContain("圖集");
+    expect(container.textContent).toContain("顯示全部");
+    expect(container.textContent).toContain("繼續工作階段");
+    expect(container.textContent).not.toContain("continue session");
   });
 });

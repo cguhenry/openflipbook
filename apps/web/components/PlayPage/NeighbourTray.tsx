@@ -1,6 +1,7 @@
 "use client";
 
 import type { ScaleKind } from "@openflipbook/config";
+import { formatUi, getStrings, type LocaleStrings } from "@/lib/i18n";
 
 /** One bloomed neighbour. `imageDataUrl` is null while its page is still
  *  generating (the slot shows a shimmer); `nodeId` is null until persisted. */
@@ -24,14 +25,15 @@ interface Props {
   failed?: number | undefined;
   onPick: (item: NeighbourItem) => void;
   onClose: () => void;
+  t?: LocaleStrings;
 }
 
 // Scale → visual encoding. Card width + chip colour make the scale legible at
 // a glance: a "container" reads bigger + warmer than a "component".
-const SCALE_META: Record<ScaleKind, { label: string; chip: string; width: string }> = {
-  component: { label: "part", chip: "bg-sky-500", width: "w-20" },
-  peer: { label: "beside", chip: "bg-slate-500", width: "w-24" },
-  container: { label: "around", chip: "bg-amber-500", width: "w-28" },
+const SCALE_META: Record<ScaleKind, { chip: string; width: string }> = {
+  component: { chip: "bg-sky-500", width: "w-20" },
+  peer: { chip: "bg-slate-500", width: "w-24" },
+  container: { chip: "bg-amber-500", width: "w-28" },
 };
 
 export default function NeighbourTray({
@@ -41,6 +43,7 @@ export default function NeighbourTray({
   failed,
   onPick,
   onClose,
+  t = getStrings("en"),
 }: Props) {
   const ready = items.filter((i) => i.imageDataUrl).length;
   const pendingCount = Math.max(0, total - items.length);
@@ -51,21 +54,27 @@ export default function NeighbourTray({
   // Bloom started but no neighbours known yet (the VLM is still surveying):
   // show activity rather than nothing while it thinks.
   const proposing = !done && total === 0 && items.length === 0;
-  const failedNote = done && (failed ?? 0) > 0 ? ` · ${failed} failed` : "";
+  const failedNote = done && (failed ?? 0) > 0
+    ? formatUi(t.failedCount, { count: failed ?? 0 })
+    : "";
   const status = empty
     ? (failed ?? 0) > 0
-      ? "Couldn't draw the neighbours — try again"
-      : "No neighbours found nearby"
+      ? t.neighboursFailed
+      : t.noNeighbours
     : done
-      ? `Around this page · ${ready} neighbour${ready === 1 ? "" : "s"} — tap one${failedNote}`
+      ? formatUi(t.aroundThisPage, {
+          ready,
+          neighbours: ready === 1 ? t.neighbourSingular : t.neighbourPlural,
+          failedNote,
+        })
       : proposing
-        ? "Looking around…"
-        : `Looking around · ${ready} of ${total}`;
+        ? t.lookingAround
+        : formatUi(t.lookingAroundProgress, { ready, total });
 
   return (
     <div
       role="region"
-      aria-label="Neighbours around this page"
+      aria-label={t.neighboursRegion}
       className="pointer-events-auto fixed bottom-3 left-1/2 z-30 max-w-[min(960px,92vw)] -translate-x-1/2 rounded-2xl border border-[var(--color-ink)]/20 bg-[var(--color-paper)]/95 p-2 shadow-xl backdrop-blur"
     >
       <div className="flex items-center justify-between px-2 pb-1.5 text-[11px] opacity-70">
@@ -77,16 +86,21 @@ export default function NeighbourTray({
         </span>
         <button
           type="button"
-          aria-label="Close neighbours"
+          aria-label={t.closeNeighbours}
           onClick={onClose}
           className="rounded px-1.5 py-0.5 text-[11px] hover:bg-[var(--color-ink)]/10"
         >
-          E · close
+          E · {t.close}
         </button>
       </div>
       <div className="flex max-w-full items-end gap-1.5 overflow-x-auto pb-1">
         {items.map((it) => {
           const meta = SCALE_META[it.scale];
+          const scaleLabel = it.scale === "component"
+            ? t.scalePart
+            : it.scale === "peer"
+              ? t.scaleBeside
+              : t.scaleAround;
           const loading = !it.imageDataUrl;
           // Clickable only once persisted — onPick navigates to the node's
           // permalink, so a not-yet-saved card would be a dead click.
@@ -95,8 +109,8 @@ export default function NeighbourTray({
               key={it.key}
               type="button"
               disabled={loading || !it.nodeId}
-              aria-label={`Explore ${it.subject}`}
-              title={`${it.subject} · ${it.scale}`}
+              aria-label={formatUi(t.exploreSubject, { subject: it.subject })}
+              title={`${it.subject} · ${scaleLabel}`}
               onClick={() => onPick(it)}
               className={
                 "relative h-16 shrink-0 overflow-hidden rounded-lg border transition disabled:cursor-default " +
@@ -122,7 +136,7 @@ export default function NeighbourTray({
                   meta.chip
                 }
               >
-                {meta.label}
+                {scaleLabel}
               </span>
               <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 py-0.5 text-[9px] text-white">
                 {it.subject}

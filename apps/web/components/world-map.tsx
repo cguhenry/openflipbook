@@ -19,6 +19,7 @@ import {
 import type { SceneView } from "@openflipbook/config";
 import { clamp } from "@/lib/clamp";
 import { nodeKind } from "@/lib/node-kind";
+import { getStrings, type LocaleStrings } from "@/lib/i18n";
 
 interface WorldMapProps {
   pages: LayoutInput[];
@@ -27,6 +28,7 @@ interface WorldMapProps {
   onClose: () => void;
   // Per-node saved view → the tile type badge (map / building / scene).
   sceneViews?: Record<string, SceneView | null>;
+  t?: LocaleStrings;
 }
 
 interface Camera {
@@ -44,6 +46,7 @@ export default function WorldMap({
   onSelect,
   onClose,
   sceneViews,
+  t = getStrings("en"),
 }: WorldMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState<{ w: number; h: number }>({
@@ -300,6 +303,20 @@ export default function WorldMap({
             relation: p.relation ?? null,
             isRoot: !p.parentId,
           });
+          const levelLabel = ({
+            map: t.nodeMap,
+            building: t.nodeBuilding,
+            street: t.nodeStreet,
+            scene: t.nodeScene,
+            page: t.nodePage,
+          } as Record<string, string>)[kind.levelLabel] ?? kind.levelLabel;
+          const relationLabel = ({
+            root: t.nodeRoot,
+            expanded: t.nodeExpanded,
+            container: t.nodeContainer,
+            edited: t.nodeEdited,
+            inside: t.nodeInside,
+          } as Record<string, string>)[kind.relLabel] ?? kind.relLabel;
           return (
           <button
             key={p.nodeId}
@@ -330,13 +347,13 @@ export default function WorldMap({
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-xs opacity-50">
-                (loading)
+                ({t.loading})
               </div>
             )}
             <span
               className="pointer-events-none absolute right-1 top-1 z-10 flex items-center gap-1 rounded bg-black/55 px-1 py-0.5 text-[9px] font-medium text-white"
               data-testid="map-tile-kind"
-              title={`${kind.levelLabel} · ${kind.relLabel}`}
+              title={`${levelLabel} · ${relationLabel}`}
               style={{
                 // Counter the camera zoom so the badge stays legible when zoomed out.
                 transform: `scale(${Math.min(1 / Math.max(camera.zoom, 0.0001), 8)})`,
@@ -345,7 +362,7 @@ export default function WorldMap({
             >
               <span>{kind.levelGlyph}</span>
               <span className="opacity-80">
-                {kind.relGlyph} {kind.relLabel}
+                {kind.relGlyph} {relationLabel}
               </span>
             </span>
           </button>
@@ -354,8 +371,8 @@ export default function WorldMap({
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-between px-3 py-2 text-[11px] opacity-70">
-        <span>scroll to zoom · drag to pan · click a tile to open</span>
-        <span>{laid.length} pages</span>
+        <span>{t.mapInstructions}</span>
+        <span>{laid.length} {laid.length === 1 ? t.pageSingular : t.pagePlural}</span>
       </div>
 
       <div className="absolute right-3 top-3 flex gap-2">
@@ -364,7 +381,7 @@ export default function WorldMap({
           onClick={() => focusOn(null, true)}
           className="pointer-events-auto rounded-full border border-[var(--color-ink)]/30 bg-white/80 px-3 py-1 text-xs hover:bg-white"
         >
-          fit all
+          {t.fitAll}
         </button>
         <button
           type="button"
@@ -372,17 +389,16 @@ export default function WorldMap({
           disabled={!activeNodeId}
           className="pointer-events-auto rounded-full border border-[var(--color-ink)]/30 bg-white/80 px-3 py-1 text-xs hover:bg-white disabled:opacity-40"
         >
-          recenter
+          {t.recenter}
         </button>
         <button
           type="button"
           onClick={onClose}
           className="pointer-events-auto rounded-full border border-[var(--color-ink)]/30 bg-white/80 px-3 py-1 text-xs hover:bg-white"
         >
-          close map
+          {t.closeMap}
         </button>
       </div>
     </div>
   );
 }
-

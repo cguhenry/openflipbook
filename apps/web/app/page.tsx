@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import RecentAtlasLink from "@/components/recent-atlas-link";
+import { PRODUCT_FLAGS } from "@/lib/product-flags";
 
 const SAMPLE_QUERIES = [
   "how does a steam engine work",
@@ -9,6 +11,7 @@ const SAMPLE_QUERIES = [
 ];
 
 export default function LandingPage() {
+  if (PRODUCT_FLAGS.nasSlim) redirect("/play");
   return (
     <main className="mx-auto flex min-h-dvh max-w-4xl flex-col items-center px-6 py-16">
       <div className="flex w-full flex-col items-center text-center">

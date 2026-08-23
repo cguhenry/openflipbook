@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import HeatmapOverlay from "@/components/heatmap-overlay";
+import { usePersistedUiLocale } from "@/hooks/usePersistedUiLocale";
+import { formatUi, getStrings } from "@/lib/i18n";
 
 interface PermalinkImageProps {
   nodeId: string;
@@ -17,6 +19,8 @@ export default function PermalinkImage({
   sessionId,
 }: PermalinkImageProps) {
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [uiLocale] = usePersistedUiLocale();
+  const t = useMemo(() => getStrings(uiLocale), [uiLocale]);
 
   // Persist last-viewed session so the landing's "open your last atlas" link
   // resolves. Cheap, no PII.
@@ -59,7 +63,7 @@ export default function PermalinkImage({
             href={`/atlas/${encodeURIComponent(sessionId)}`}
             className="rounded-full border border-[var(--color-ink)]/40 px-3 py-1 hover:bg-[var(--color-ink)]/5"
           >
-            Open atlas
+            {t.atlas}
           </a>
           <button
             type="button"
@@ -70,21 +74,21 @@ export default function PermalinkImage({
                 ? "border-red-500 bg-red-500 text-white"
                 : "border-[var(--color-ink)]/40 hover:bg-[var(--color-ink)]/5")
             }
-            title="Show where children of this page were tapped"
+            title={t.showTapsFromChildren}
           >
-            {showHeatmap ? "hide taps" : "show what others tapped"}
+            {showHeatmap ? t.hideTaps : t.showWhatOthersTapped}
           </button>
         </div>
-        <span className="opacity-50">node {nodeId.slice(0, 8)}</span>
+        <span className="opacity-50">{t.node} {nodeId.slice(0, 8)}</span>
       </div>
       <figure className="relative overflow-hidden rounded-2xl border border-[var(--color-ink)]/20 bg-white shadow-lg">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={imageUrl}
-          alt={`Generated illustration for ${query}`}
+          alt={formatUi(t.generatedIllustrationAlt, { query })}
           className="block h-auto w-full"
         />
-        {showHeatmap && <HeatmapOverlay parentId={nodeId} />}
+        {showHeatmap && <HeatmapOverlay parentId={nodeId} t={t} />}
       </figure>
     </>
   );

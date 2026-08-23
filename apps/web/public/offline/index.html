@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-TW">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <title>OpenFlipbook Offline</title>
+  <title>OpenFlipbook 離線書</title>
   <link rel="stylesheet" href="assets/player.css">
 </head>
 <body>
@@ -13,7 +13,7 @@
       <button id="back" type="button" aria-label="上一頁">←</button>
       <button id="forward" type="button" aria-label="下一頁">→</button>
       <select id="page-select" aria-label="所有頁面"></select>
-      <button id="sources-toggle" type="button" aria-expanded="false" hidden>Sources (0)</button>
+      <button id="sources-toggle" type="button" aria-expanded="false" hidden>來源（0）</button>
       <span id="status" role="status" aria-live="polite"></span>
     </header>
     <section id="page-surface" class="page-surface" aria-live="polite">
@@ -23,10 +23,10 @@
       </div>
     </section>
     <aside id="sources-panel" class="sources-panel" hidden>
-      <h2>Sources</h2>
+      <h2>來源</h2>
       <ul id="sources-list" class="sources-list"></ul>
     </aside>
-    <footer class="offline-note">離線複習版 · 未探索的知識點需要回到線上版本繼續生成</footer>
+    <footer class="offline-note">離線複習版 · 未探索的內容需回到線上版本繼續產生</footer>
   </main>
   <script src="data/book.js"></script>
   <script src="assets/player.js"></script>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { getStrings, type LocaleStrings } from "@/lib/i18n";
 
 interface QuickbarItem {
   nodeId: string | null;
@@ -14,6 +15,7 @@ interface Props {
   items: QuickbarItem[];
   onPick: (id: string) => void;
   onClose: () => void;
+  t?: LocaleStrings;
 }
 
 /**
@@ -22,7 +24,7 @@ interface Props {
  * dismisses; Esc handling lives on the page so it cooperates with other
  * overlays (help, context menu).
  */
-export function Quickbar({ query, setQuery, items, onPick, onClose }: Props) {
+export function Quickbar({ query, setQuery, items, onPick, onClose, t = getStrings("en") }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     inputRef.current?.focus();
@@ -57,11 +59,11 @@ export function Quickbar({ query, setQuery, items, onPick, onClose }: Props) {
           onKeyDown={(e) => {
             if (e.key === "Enter" && matches[0]) onPick(matches[0].nodeId);
           }}
-          placeholder="Jump to page…"
+          placeholder={t.jumpToPage}
           className="w-full rounded-md border border-[var(--color-edge)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--color-ink)]"
         />
         <ul className="mt-2 max-h-72 overflow-auto text-sm">
-          {matches.length === 0 && <li className="px-2 py-3 opacity-60">No matches yet.</li>}
+          {matches.length === 0 && <li className="px-2 py-3 opacity-60">{t.noMatches}</li>}
           {matches.map((m) => (
             <li key={m.nodeId}>
               <button

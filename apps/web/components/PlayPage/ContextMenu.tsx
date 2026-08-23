@@ -1,5 +1,7 @@
 "use client";
 
+import { getStrings, type LocaleStrings } from "@/lib/i18n";
+
 /** A target-aware action contributed by the parent (the geo-aware section:
  *  fix/remove/enter THIS entity, add-something-here on empty ground). */
 export interface ContextMenuItem {
@@ -25,6 +27,7 @@ interface Props {
   // Rendered ABOVE the page-level actions, divider-separated. The menu stays
   // dumb: the parent owns target resolution and what each item does.
   extraItems?: ContextMenuItem[] | undefined;
+  t?: LocaleStrings;
 }
 
 /**
@@ -48,6 +51,7 @@ export function ContextMenu({
   onCopyImage,
   onClose,
   extraItems,
+  t = getStrings("en"),
 }: Props) {
   return (
     <div className="fixed inset-0 z-[55]" onClick={onClose}>
@@ -82,7 +86,7 @@ export function ContextMenu({
           disabled={!canCopy}
           onClick={onCopyPermalink}
         >
-          Copy permalink
+          {t.copyPermalink}
         </button>
         <button
           type="button"
@@ -90,7 +94,7 @@ export function ContextMenu({
           disabled={!canSavePostcard}
           onClick={onSavePostcard}
         >
-          Save as postcard
+          {t.savePostcard}
         </button>
         <button
           type="button"
@@ -98,7 +102,7 @@ export function ContextMenu({
           disabled={!canSavePostcard}
           onClick={onDownloadImage}
         >
-          Download image
+          {t.downloadImage}
         </button>
         <button
           type="button"
@@ -106,14 +110,14 @@ export function ContextMenu({
           disabled={!canSavePostcard}
           onClick={onCopyImage}
         >
-          Copy image
+          {t.copyImage}
         </button>
         <button
           type="button"
           className="block w-full px-3 py-1.5 text-left hover:bg-[var(--color-ink)]/10"
           onClick={onToggleBeacons}
         >
-          {beaconsHidden ? "Show beacons" : "Hide beacons"}
+          {beaconsHidden ? t.showBeacons : t.hideBeacons}
         </button>
         <button
           type="button"
@@ -121,7 +125,7 @@ export function ContextMenu({
           disabled={!canPrune}
           onClick={onPrune}
         >
-          Prune branch from history
+          {t.pruneBranch}
         </button>
       </div>
     </div>

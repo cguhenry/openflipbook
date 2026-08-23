@@ -47,7 +47,12 @@ import {
   newTraceId,
   nowMs,
 } from "@/lib/trace";
-import { getStrings, resolveOutputLocale } from "@/lib/i18n";
+import {
+  formatUi,
+  getStrings,
+  localizeGenerationError,
+  resolveOutputLocale,
+} from "@/lib/i18n";
 import { useImageTier, useVideoTier } from "@/hooks/usePersistedTier";
 import { useLoopKnobs, wireFields } from "@/hooks/useSpeedPreset";
 import { useSharedSession } from "@/hooks/useSharedSession";
@@ -66,6 +71,7 @@ import {
   zoomModeForLevel,
 } from "@/lib/world-mode";
 import { usePersistedLocale } from "@/hooks/usePersistedLocale";
+import { usePersistedUiLocale } from "@/hooks/usePersistedUiLocale";
 import { usePersistedTheme } from "@/hooks/usePersistedTheme";
 import { useReducedMotionPreference } from "@/hooks/useReducedMotionPreference";
 import { useStyleAnchor } from "@/hooks/useStyleAnchor";
@@ -526,24 +532,20 @@ export default function PlayPage() {
     const t = setTimeout(() => setShareNote(null), 2500);
     return () => clearTimeout(t);
   }, [shareNote]);
-  const SHARE_COPIED_NOTE = "Link copied — anyone can open it to explore this world";
-  const SHARE_COPY_FAILED_NOTE = "Couldn't copy — long-press the link to copy it";
   const copyPermalink = async (nodeId: string) => {
     const link = `${window.location.origin}/n/${nodeId}`;
     try {
       if (!navigator.clipboard) throw new Error("clipboard unavailable");
       await navigator.clipboard.writeText(link);
-      setShareNote(SHARE_COPIED_NOTE);
+      setShareNote(t.linkCopied);
     } catch {
-      setShareNote(SHARE_COPY_FAILED_NOTE);
+      setShareNote(t.linkCopyFailed);
     }
   };
   // Copy the raw render to the clipboard. Same honest-note contract as
   // copyPermalink: only claims success after the write resolves. Fetches the
   // node's bytes same-origin (via /api/image) so the canvas→PNG re-encode the
   // Clipboard API needs isn't blocked by a tainted cross-origin canvas.
-  const IMAGE_COPIED_NOTE = "Image copied to clipboard";
-  const IMAGE_COPY_FAILED_NOTE = "Couldn't copy the image — use Download instead";
   const copyImage = async (nodeId: string) => {
     try {
       if (!navigator.clipboard || typeof ClipboardItem === "undefined")
@@ -552,9 +554,9 @@ export default function PlayPage() {
       if (!res.ok) throw new Error(`image fetch ${res.status}`);
       const png = await rasterToPngBlob(await res.blob());
       await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
-      setShareNote(IMAGE_COPIED_NOTE);
+      setShareNote(t.imageCopied);
     } catch {
-      setShareNote(IMAGE_COPY_FAILED_NOTE);
+      setShareNote(t.imageCopyFailed);
     }
   };
   // The click handler closes over state at dispatch time; Wander's synthetic
@@ -826,13 +828,14 @@ export default function PlayPage() {
   const requestImageTier = PRODUCT_FLAGS.nasSlim ? "balanced" : imageTier;
   const [videoTier, setVideoTier] = useVideoTier();
   const [outputLocale, setOutputLocale] = usePersistedLocale();
+  const [uiLocale, setUiLocale] = usePersistedUiLocale();
   const [theme, setTheme] = usePersistedTheme();
   const [motionPreference, setMotionPreference] = useReducedMotionPreference();
   const forceReducedMotionRef = useRef(motionPreference === "reduce");
   useEffect(() => {
     forceReducedMotionRef.current = motionPreference === "reduce";
   }, [motionPreference]);
-  const t = getStrings(outputLocale);
+  const t = useMemo(() => getStrings(uiLocale), [uiLocale]);
 
   const [editMode, setEditMode] = useState(false);
   const [editInstruction, setEditInstruction] = useState("");
@@ -974,7 +977,7 @@ export default function PlayPage() {
       setGenerationNotice(null);
       setEditVerdictChip(null);
       setStatusMsg(
-        body.mode === "tap" ? "Resolving what you tapped…" : "Planning page…"
+        body.mode === "tap" ? t.resolvingTap : t.planningPage
       );
       bindTrace(traceId, { announce: true });
 
@@ -992,7 +995,7 @@ export default function PlayPage() {
           signal: ac.signal,
         });
         if (!response.ok || !response.body) {
-          throw new Error(`generation failed: HTTP ${response.status}`);
+          throw new Error(response.status === 429 ? t.generationCapReached : t.generationFailedRetry);
         }
         let lastTitle = body.query;
         let lastImage: string | null = null;
@@ -1013,13 +1016,13 @@ export default function PlayPage() {
               t: nowMs(),
             });
             if (evt.stage === "click_resolved" && evt.subject) {
-              setStatusMsg(`Exploring "${evt.subject}"…`);
+              setStatusMsg(formatUi(t.exploringSubject, { subject: evt.subject }));
             } else if (evt.stage === "searching") {
-              setStatusMsg("Grounding page…");
+              setStatusMsg(t.groundingPage);
             } else if (evt.stage === "grounding_warning") {
-              setGenerationNotice(evt.message ?? "Grounding unavailable; continuing without sources.");
+              setGenerationNotice(t.groundingUnavailable);
             } else if (evt.stage === "planning") {
-              setStatusMsg("Planning page…");
+              setStatusMsg(t.planningPage);
             } else if (evt.stage === "generating_image") {
               // The pro model has no fast draft to show (OpenRouter path)
               // and routinely takes minutes — say so instead of leaving a
@@ -1028,19 +1031,19 @@ export default function PlayPage() {
               // dependency-free, so component state here would be stale.
               const proNote =
                 body.image_tier === "pro"
-                  ? " (pro model — usually 2–3 min)"
+                  ? t.proModelNote
                   : "";
               setStatusMsg(
                 evt.page_title
-                  ? `Drawing "${evt.page_title}"…${proNote}`
-                  : `Drawing image…${proNote}`
+                  ? formatUi(t.drawingTitle, { title: evt.page_title, note: proNote })
+                  : formatUi(t.drawingImage, { note: proNote })
               );
             } else if (evt.stage === "draft") {
-              setStatusMsg("Draft preview — the full render is refining…");
+              setStatusMsg(t.draftPreview);
             } else if (evt.stage === "aligning") {
-              setStatusMsg("Aligning explored points…");
+              setStatusMsg(t.aligningPoints);
             } else if (evt.stage === "saving") {
-              setStatusMsg("Saving page…");
+              setStatusMsg(t.savingPage);
             }
           } else if (evt.type === "progress") {
             lastImage = `data:image/jpeg;base64,${evt.jpeg_b64}`;
@@ -1078,7 +1081,7 @@ export default function PlayPage() {
               setSessionSpend(evt.session_spend_estimate);
             }
             if (evt.grounding_warning) {
-              setGenerationNotice(evt.grounding_warning);
+              setGenerationNotice(t.groundingUnavailable);
             }
             setProgressiveDraft(false);
             setPage({
@@ -1110,7 +1113,7 @@ export default function PlayPage() {
               // flap killed the judges) — say so instead of letting style
               // drift pass as verified. Same chip surface as edit verdicts.
               setEditVerdictChip({
-                text: "⚠ unverified render — critics were unavailable",
+                text: t.unverifiedRender,
                 revertTo: null,
               });
             }
@@ -1263,7 +1266,7 @@ export default function PlayPage() {
               trace_id: traceId,
               t: nowMs(),
             });
-            throw new Error(evt.message);
+            throw new Error(localizeGenerationError(evt.message, t));
           }
         }
         if (
@@ -1325,7 +1328,7 @@ export default function PlayPage() {
         }
       }
     },
-    []
+    [bindTrace, t]
   );
 
   const stopActiveGeneration = useCallback(() => {
@@ -1334,13 +1337,13 @@ export default function PlayPage() {
     // Invalidate the reader immediately so a late final cannot update the UI;
     // stopGeneration then notifies the backend before aborting the fetch.
     activeGenerationRef.current = null;
-    setGenerationNotice("Generation cancelled");
-    setStatusMsg("Generation cancelled");
+    setGenerationNotice(t.generationCancelled);
+    setStatusMsg(t.generationCancelled);
     setPhase("ready");
     setMorphFx(null);
     setProgressiveDraft(false);
     void stopGeneration(active, "/api/generate-page/cancel");
-  }, []);
+  }, [t]);
 
   // The error banner's "Try again": replay the exact failed request with the
   // trace_id stripped — the API route claims the Idempotency-Key per trace,
@@ -1444,7 +1447,7 @@ export default function PlayPage() {
   const acceptUploadedImage = useCallback(
     async (file: File) => {
       if (!file.type.startsWith("image/")) {
-        setError("Only image files can be used as a seed page.");
+        setError(t.onlyImageFiles);
         return;
       }
       try {
@@ -1461,7 +1464,7 @@ export default function PlayPage() {
         setPhase("generating");
         setError(null);
         setGenerationNotice(null);
-        setStatusMsg("Reading the uploaded image…");
+        setStatusMsg(t.readingUploadedImage);
 
         const seedRes = await fetch("/api/image-seed", {
           method: "POST",
@@ -1486,7 +1489,7 @@ export default function PlayPage() {
         }
         const pagePlan = seedPayload.page_plan;
         const alignedHotspots = seedPayload.aligned_hotspots;
-        const seedTitle = pagePlan.title || "Uploaded image";
+        const seedTitle = pagePlan.title || t.uploadedImage;
         const seedQuery = seedTitle;
         setPage({
           nodeId: null,
@@ -1499,7 +1502,7 @@ export default function PlayPage() {
           alignedHotspots,
           seedType: "image",
         });
-        setStatusMsg("Saving image seed…");
+        setStatusMsg(t.savingImageSeed);
         const saved = await persistNode(
           {
             parent_id: null,
@@ -1520,7 +1523,7 @@ export default function PlayPage() {
           ac.signal,
         );
         if (ac.signal.aborted) return;
-        if (!saved) throw new Error("Image seed persistence failed.");
+        if (!saved) throw new Error(t.imageSeedPersistenceFailed);
         const persisted: Page = {
           nodeId: saved.id,
           sessionId,
@@ -1549,11 +1552,11 @@ export default function PlayPage() {
         // An upload failure isn't a generation — "Try again" must not replay
         // an unrelated earlier generate body.
         lastGenerateRef.current = null;
-        setError((err as Error).message);
+        setError(localizeGenerationError((err as Error).message, t));
         setPhase("error");
       }
     },
-    [sessionId, bindTrace]
+    [sessionId, bindTrace, t]
   );
 
   const onFileInputChange = useCallback(
@@ -2204,7 +2207,7 @@ export default function PlayPage() {
       setViewMode("page");
       if (a.renderUnjudged) {
         setEditVerdictChip({
-          text: "⚠ unverified render — critics were unavailable",
+          text: t.unverifiedRender,
           revertTo: null,
         });
       }
@@ -2213,7 +2216,7 @@ export default function PlayPage() {
       window.history.replaceState({}, "", url.toString());
       void geoRefetch();
     },
-    [sessionId, geoRefetch],
+    [sessionId, geoRefetch, t],
   );
   const { start: startAscend, pending: ascendPending, error: ascendError } =
     useAscend(onAscended);
@@ -3672,6 +3675,8 @@ export default function PlayPage() {
 
       <div className="-mt-2 flex flex-wrap justify-end gap-2">
         <SessionHistory
+          t={t}
+          uiLocale={uiLocale}
           currentSessionId={sessionId}
           onNewSession={startNewSession}
           onResume={(id) => {
@@ -3680,6 +3685,9 @@ export default function PlayPage() {
         />
         {PRODUCT_FLAGS.nasSlim && (
           <NasSettingsRuntime
+            t={t}
+            uiLocale={uiLocale}
+            setUiLocale={setUiLocale}
             outputLocale={outputLocale}
             setOutputLocale={setOutputLocale}
             theme={theme}
@@ -3717,12 +3725,12 @@ export default function PlayPage() {
         )}
       </div>
 
-      {isDraggingFile && <DragDropOverlay />}
+      {isDraggingFile && <DragDropOverlay t={t} />}
 
       {phase === "error" && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-red-300 bg-red-50 px-4 py-2.5 text-sm text-red-900">
           <span className="min-w-0 break-words">
-            {(error ?? "Generation failed.").slice(0, 220)}
+            {(error ?? t.generationFailed).slice(0, 220)}
           </span>
           {lastGenerateRef.current && (
             <button
@@ -3730,7 +3738,7 @@ export default function PlayPage() {
               onClick={retryLast}
               className="shrink-0 rounded-full border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-900 hover:bg-red-100"
             >
-              ↻ Try again
+              ↻ {t.tryAgain}
             </button>
           )}
         </div>
@@ -3744,7 +3752,7 @@ export default function PlayPage() {
 
       {page?.imageDataUrl && history.items.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <Breadcrumb crumbs={breadcrumb} onJump={selectFromMap} />
+          <Breadcrumb crumbs={breadcrumb} onJump={selectFromMap} t={t} />
           {worldEnabled && (
             <SpatialPath crumbs={breadcrumb} onNavigate={selectFromMap} />
           )}
@@ -3773,44 +3781,44 @@ export default function PlayPage() {
               onClick={goBack}
               disabled={!canGoBack}
               className="min-h-11 rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 disabled:opacity-30 sm:min-h-0 sm:py-1"
-              title="Go back (←)"
+              title={t.goBackTitle}
             >
-              ← back
+              ← {t.back}
             </button>
             <button
               type="button"
               onClick={goForward}
               disabled={!canGoForward}
               className="min-h-11 rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 disabled:opacity-30 sm:min-h-0 sm:py-1"
-              title="Go forward (→)"
+              title={t.goForwardTitle}
             >
-              forward →
+              {t.forward} →
             </button>
             <button
               type="button"
               onClick={() => setViewMode((m) => (m === "map" ? "page" : "map"))}
               className="min-h-11 rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 sm:min-h-0 sm:py-1"
-              title="Toggle world map (M)"
+              title={t.toggleMapTitle}
             >
-              {viewMode === "map" ? "📄 page" : "🗺 map"}
+              {viewMode === "map" ? `📄 ${t.page}` : `🗺 ${t.map}`}
             </button>
             <a
               href={`/atlas/${encodeURIComponent(sessionId)}`}
               target="_blank"
               rel="noreferrer"
               className="flex min-h-11 items-center rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 sm:min-h-0 sm:py-1"
-              title="Open this session's atlas in a new tab"
+              title={t.openAtlasTitle}
             >
-              ↗ atlas
+              ↗ {t.atlas}
             </a>
           </div>
           <span className="opacity-60">
-            step {history.trailIdx + 1} of {history.trail.length}
+            {formatUi(t.stepOf, { current: history.trailIdx + 1, total: history.trail.length })}
             {history.items.length > history.trail.length
-              ? ` · ${history.items.length} pages explored`
+              ? ` · ${formatUi(t.pagesExplored, { count: history.items.length })}`
               : ""}
             {shared.viewers !== null && shared.viewers > 1 && (
-              <span title="people viewing this session right now">
+              <span title={formatUi(t.viewersNow, { count: shared.viewers })}>
                 {" "}
                 · 👁 {shared.viewers}
               </span>
@@ -3825,16 +3833,16 @@ export default function PlayPage() {
                 if (id) selectFromMap(id);
               }}
               className="rounded-full border border-emerald-600/40 bg-emerald-50 px-3 py-1 text-xs text-emerald-900 hover:bg-emerald-100"
-              title="A co-viewer added this page — click to open it"
+              title={t.coViewerAddedPage}
             >
-              ✦ new: {shared.incoming.title.slice(0, 32)} →
+              ✦ {t.newPage}: {shared.incoming.title.slice(0, 32)} →
             </button>
           )}
           </div>
         </div>
       )}
 
-      {page?.imageDataUrl && <WaterfallHUD />}
+      {!PRODUCT_FLAGS.nasSlim && page?.imageDataUrl && <WaterfallHUD />}
 
       {page?.imageDataUrl && viewMode === "map" ? (
         <WorldMap
@@ -3851,6 +3859,7 @@ export default function PlayPage() {
           activeNodeId={page?.nodeId ?? null}
           onSelect={selectFromMap}
           onClose={() => setViewMode("page")}
+          t={t}
           sceneViews={Object.fromEntries(
             history.items
               .filter((p): p is Page & { nodeId: string } => Boolean(p.nodeId))
@@ -3883,7 +3892,7 @@ export default function PlayPage() {
           }}
         >
           {page.sources && page.sources.length > 0 && (
-            <CitationsChip sources={page.sources} />
+            <CitationsChip sources={page.sources} t={t} />
           )}
           {page.nodeId && (
             <button
@@ -3896,10 +3905,10 @@ export default function PlayPage() {
               aria-pressed={styleAnchor?.nodeId === page.nodeId}
               title={
                 styleAnchor?.nodeId === page.nodeId
-                  ? "Style locked to this page — click to unlock"
+                  ? t.unlockStyleTitle
                   : styleAnchor
-                    ? "Pin this page's style for the rest of the session"
-                    : "Pin this page as the session's visual style"
+                    ? t.replaceStyleTitle
+                    : t.setStyleTitle
               }
               className={
                 "pointer-events-auto absolute bottom-3 start-3 z-10 flex select-none items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium backdrop-blur transition " +
@@ -3912,10 +3921,10 @@ export default function PlayPage() {
               <span aria-hidden>📌</span>
               <span>
                 {styleAnchorPending
-                  ? "Pinning…"
+                  ? t.pinning
                   : styleAnchor?.nodeId === page.nodeId
-                    ? "Style locked"
-                    : "Pin style"}
+                    ? t.styleLocked
+                    : t.pinStyle}
               </span>
             </button>
           )}
@@ -3963,7 +3972,7 @@ export default function PlayPage() {
                 <MorphImagePair
                   imgRef={imgRef}
                   imageDataUrl={page.imageDataUrl}
-                  alt={`Generated illustration for ${page.query}`}
+                  alt={formatUi(t.generatedIllustrationAlt, { query: page.query })}
                   morphFx={morphFx}
                   onError={() => setImgFailed(true)}
                   newImageClassName={
@@ -4004,6 +4013,7 @@ export default function PlayPage() {
                   alignedHotspots={page.alignedHotspots ?? []}
                   imageRect={containRect}
                   showHotspots={false}
+                  t={t}
                 />
               )}
               {strokeState && <StrokeOverlay pxPoints={strokeState.pxPoints} />}
@@ -4023,19 +4033,19 @@ export default function PlayPage() {
                     <button
                       type="button"
                       className="rounded-full bg-white/15 px-2 py-0.5 hover:bg-white/25"
-                      title="Go back to the page as it was before this edit"
+                      title={t.revertEditTitle}
                       onClick={() => {
                         const id = editVerdictChip.revertTo;
                         setEditVerdictChip(null);
                         if (id) selectFromMap(id);
                       }}
                     >
-                      ↩ revert
+                      ↩ {t.revertEdit}
                     </button>
                   )}
                   <button
                     type="button"
-                    aria-label="Dismiss edit verdict"
+                    aria-label={t.dismissEditVerdict}
                     className="opacity-60 hover:opacity-100"
                     onClick={() => setEditVerdictChip(null)}
                   >
@@ -4044,7 +4054,7 @@ export default function PlayPage() {
                 </div>
               )}
 
-              {imgFailed && <ImageFailedOverlay />}
+              {imgFailed && <ImageFailedOverlay t={t} />}
 
               {hoverPos &&
                 phase !== "generating" &&
@@ -4071,6 +4081,7 @@ export default function PlayPage() {
                   nudgeKey={blankTap.key}
                   xPx={blankTap.xPx}
                   yPx={blankTap.yPx}
+                  t={t}
                 />
               )}
 
@@ -4210,6 +4221,7 @@ export default function PlayPage() {
                       clickInParent: p.clickInParent,
                     }))}
                   onSelect={selectFromMap}
+                  t={t}
                 />
               )}
 
@@ -4217,6 +4229,7 @@ export default function PlayPage() {
               <GeneratingBanner
                 statusMsg={statusMsg}
                 onStop={stopActiveGeneration}
+                t={t}
               />
             )}
 
@@ -4229,17 +4242,17 @@ export default function PlayPage() {
                       toast's text. Localize belongs on the right per TapHint's
                       layout contract (Pin-style left / hint centered / localize
                       right); z-10 keeps "Map it" tappable over the centered hint. */}
-                  <span>Couldn’t map this page — taps may miss.</span>
+                  <span>{t.pageMappingFailed}</span>
                   <button
                     type="button"
                     onClick={() => void localizeCurrentNode()}
                     className="rounded-full bg-white/20 px-2.5 py-1 font-medium hover:bg-white/30"
                   >
-                    Map it
+                    {t.mapPage}
                   </button>
                   <button
                     type="button"
-                    aria-label="Dismiss"
+                    aria-label={t.dismiss}
                     onClick={() => setLocalizeStatus(null)}
                     className="text-white/70 hover:text-white"
                   >
@@ -4305,10 +4318,10 @@ export default function PlayPage() {
                   (bloom !== null && !bloom.done)
                 }
                 className="flex items-center gap-1.5 rounded-full bg-teal-600/85 px-3 py-1 text-xs text-white hover:bg-teal-600 disabled:opacity-50"
-                title="Look around (E) — bloom the world around this page (vs tap a region to go in)"
+                title={t.aroundTitle}
               >
                 <BloomGlyph className="h-3.5 w-3.5" />
-                Around
+                {t.around}
               </button>
               {!PRODUCT_FLAGS.nasSlim && (
                 <>
@@ -4449,6 +4462,7 @@ export default function PlayPage() {
         styleAnchor === null &&
         !styleGalleryDismissed ? (
         <StyleGallery
+          t={t}
           onPick={(presetId) => {
             setFromPreset(presetId);
             dismissStyleGallery();
@@ -4458,20 +4472,20 @@ export default function PlayPage() {
       ) : (
         <div className="flex h-[60dvh] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[var(--color-ink)]/30 text-center opacity-70">
           {phase === "generating" ? (
-            <p>{statusMsg ?? "Generating first page..."}</p>
+            <p>{statusMsg ?? t.generatingFirstPage}</p>
           ) : (
             <>
-              <p>Type something above to begin.</p>
+              <p>{t.typeToBegin}</p>
               <p className="text-sm">
-                Or{" "}
+                {t.emptyUploadPrefix}{" "}
                 <button
                   type="button"
                   className="underline"
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  upload an image
+                  {t.uploadAnImage}
                 </button>{" "}
-                or drag one anywhere on this page.
+                {t.emptyUploadSuffix}
               </p>
             </>
           )}
@@ -4482,17 +4496,17 @@ export default function PlayPage() {
         <div className="flex flex-col items-center gap-1 text-xs">
           <div className="flex items-center gap-2 opacity-60">
             <span>
-              Permalink: <code>/n/{page.nodeId}</code>
+              {t.permalink}: <code>/n/{page.nodeId}</code>
             </span>
             <button
               type="button"
               onClick={() => {
                 if (page?.nodeId) void copyPermalink(page.nodeId);
               }}
-              title="Copy a link anyone can open to explore this world"
+              title={t.shareTitle}
               className="rounded-full border border-[var(--color-ink)]/30 px-2.5 py-0.5 font-medium opacity-100 transition hover:bg-[var(--color-ink)]/10"
             >
-              🔗 Share
+              🔗 {t.share}
             </button>
           </div>
           {shareNote && (
@@ -4505,6 +4519,7 @@ export default function PlayPage() {
 
       {quickbarOpen && (
         <Quickbar
+          t={t}
           query={quickbarQuery}
           setQuery={setQuickbarQuery}
           items={history.items}
@@ -4520,7 +4535,7 @@ export default function PlayPage() {
         />
       )}
 
-      {helpOpen && <HelpOverlay onClose={() => setHelpOpen(false)} />}
+      {helpOpen && <HelpOverlay onClose={() => setHelpOpen(false)} t={t} />}
       <CodexPanel
         open={codexOpen}
         onClose={() => setCodexOpen(false)}
@@ -4548,6 +4563,7 @@ export default function PlayPage() {
           phase !== "generating") ||
           (phase === "ready" && history.items.length <= 1)) && (
           <FirstRunCoach
+            t={t}
             onShowHelp={() => setHelpOpen(true)}
             worldHint={worldEnabled}
             enterHintActionable={ENTER_COACH_ENABLED}
@@ -4560,6 +4576,7 @@ export default function PlayPage() {
 
       {scrubberOpen && page?.imageDataUrl && history.trail.length > 1 && (
         <TimeScrubber
+          t={t}
           frames={history.trail
             .map((id) => history.items.find((p) => p.nodeId === id))
             .filter((p): p is Page => Boolean(p))
@@ -4580,6 +4597,7 @@ export default function PlayPage() {
 
       {bloom && (
         <NeighbourTray
+          t={t}
           items={bloom.items}
           total={bloom.total}
           done={bloom.done}
@@ -4593,6 +4611,7 @@ export default function PlayPage() {
 
       {contextMenu && (
         <ContextMenu
+          t={t}
           x={contextMenu.xPx}
           y={contextMenu.yPx}
           extraItems={contextExtraItems}
@@ -4609,7 +4628,10 @@ export default function PlayPage() {
           }}
           onSavePostcard={() => {
             if (page?.nodeId) {
-              window.open(`/api/postcard/${page.nodeId}?download=1`, "_blank");
+              window.open(
+                `/api/postcard/${page.nodeId}?download=1&ui_locale=${encodeURIComponent(uiLocale)}`,
+                "_blank",
+              );
             }
             setContextMenu(null);
           }}
@@ -4642,9 +4664,7 @@ export default function PlayPage() {
               const removeCount = subtree.size;
               if (
                 removeCount > 1 &&
-                !window.confirm(
-                  `Remove this branch and ${removeCount - 1} child page(s) from history? Persisted pages stay on disk.`
-                )
+                !window.confirm(formatUi(t.removeBranchConfirm, { count: removeCount - 1 }))
               ) {
                 return prev;
               }
@@ -4671,6 +4691,7 @@ export default function PlayPage() {
 
       {viewMode !== "map" && history.items.length >= 2 && (
         <SessionMinimap
+          t={t}
           pages={history.items
             .filter((p): p is Page & { nodeId: string } => Boolean(p.nodeId))
             .map((p) => ({

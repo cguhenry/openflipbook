@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
+import { getStrings } from "@/lib/i18n";
 import SessionHistory from "./SessionHistory";
 
 describe("SessionHistory", () => {
@@ -30,6 +31,8 @@ describe("SessionHistory", () => {
     const root = createRoot(container);
     root.render(
       <SessionHistory
+        t={getStrings("en")}
+        uiLocale="en"
         currentSessionId="s-current"
         onNewSession={onNewSession}
         onResume={onResume}
@@ -45,7 +48,7 @@ describe("SessionHistory", () => {
       button.textContent?.includes("New atlas"),
     );
     expect(resume).toBeTruthy();
-    expect(container.textContent).toContain("3 pages · 1 branches · image seed");
+    expect(container.textContent).toContain("3 pages · 1 branch · image seed");
     const close = container.querySelector('button[aria-label="Close history"]');
     expect(close).toBeTruthy();
     expect(document.activeElement).toBe(close);
@@ -59,6 +62,36 @@ describe("SessionHistory", () => {
     expect(newSession).toBeTruthy();
     newSession!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onNewSession).toHaveBeenCalledTimes(1);
+    root.unmount();
+    container.remove();
+  });
+
+  it("renders normal History chrome in zh-TW", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ sessions: [] }),
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    root.render(
+      <SessionHistory
+        t={getStrings("zh-TW")}
+        uiLocale="zh-TW"
+        currentSessionId="s-current"
+        onNewSession={vi.fn()}
+        onResume={vi.fn()}
+      />,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const history = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("歷史紀錄"),
+    );
+    history?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(container.textContent).toContain("最近的工作階段");
+    expect(container.textContent).toContain("新工作階段");
+    expect(container.textContent).toContain("尚無已儲存的工作階段");
     root.unmount();
     container.remove();
   });

@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 
-import { isRTL } from "./i18n";
+import { getStrings, isRTL } from "./i18n";
 
 export interface PostcardNode {
   nodeId: string;
@@ -27,6 +27,7 @@ export function postcardLayout(
   qrDataUrl: string,
 ): ReactElement {
   const rtl = isRTL(node.locale ?? "en");
+  const t = getStrings(node.locale ?? "en");
   const permalinkDisplay = `${stripScheme(baseUrl)}/n/${node.nodeId}`;
   return (
     <div
@@ -92,7 +93,7 @@ export function postcardLayout(
             <span style={{ display: "flex" }}>{permalinkDisplay}</span>
             {node.citationCount > 0 ? (
               <span style={{ display: "flex" }}>
-                · {node.citationCount} {pluralSources(node.citationCount)}
+                · {node.citationCount} {node.citationCount === 1 ? t.sourceSingular : t.sourcePlural}
               </span>
             ) : null}
           </div>
@@ -111,8 +112,4 @@ export function postcardLayout(
 
 function stripScheme(url: string): string {
   return url.replace(/^https?:\/\//, "");
-}
-
-function pluralSources(n: number): string {
-  return n === 1 ? "source" : "sources";
 }

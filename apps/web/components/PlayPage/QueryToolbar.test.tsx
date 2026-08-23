@@ -83,7 +83,7 @@ describe("QueryToolbar", () => {
   it("changes the output locale", () => {
     const props = makeProps();
     render(<QueryToolbar {...props} />);
-    fireEvent.change(screen.getByRole("combobox", { name: t.langLabel }), {
+    fireEvent.change(screen.getByRole("combobox", { name: t.outputLanguage }), {
       target: { value: "fr" },
     });
     expect(props.setOutputLocale).toHaveBeenCalledWith("fr");
@@ -137,8 +137,8 @@ describe("QueryToolbar", () => {
     expect(input.className).toContain("min-w-0");
     expect(upload.className).toContain("min-h-11");
     expect(go.className).toContain("min-h-11");
-    expect(screen.queryByRole("combobox", { name: t.langLabel })).toBeNull();
-    expect(screen.queryByRole("group", { name: "Theme" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: t.outputLanguage })).toBeNull();
+    expect(screen.queryByRole("group", { name: t.theme })).toBeNull();
     expect(screen.queryByRole("group", { name: "Image quality tier" })).toBeNull();
     expect(screen.queryByRole("group", { name: "World Mode" })).toBeNull();
     expect(screen.queryByText(/projected/i)).toBeNull();
