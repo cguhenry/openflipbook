@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getNode } from "@/lib/db";
 import { readServerEnv } from "@/lib/env";
+import { nodeImagePath } from "@/lib/node-image";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ export async function GET(_req: Request, { params }: Params) {
     query: row.query,
     page_title: row.page_title,
     image_url: `${publicBase}/${row.image_key}`,
+    browser_image_url: nodeImagePath(row.id),
     image_model: row.image_model,
     prompt_author_model: row.prompt_author_model,
     aspect_ratio: row.aspect_ratio,

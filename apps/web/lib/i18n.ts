@@ -903,7 +903,14 @@ export function defaultUiLocale(env: Record<string, string | undefined> = proces
   return normalizeUiLocale(env.NEXT_PUBLIC_DEFAULT_UI_LOCALE ?? profileDefault, profileDefault);
 }
 
-export const DEFAULT_UI_LOCALE = defaultUiLocale();
+// Next.js only inlines NEXT_PUBLIC_* references when each key is accessed
+// directly. Passing the dynamic process.env object made the client bundle fall
+// back to English while the NAS server rendered zh-TW, causing hydration text
+// mismatches in a real browser.
+export const DEFAULT_UI_LOCALE = defaultUiLocale({
+  NEXT_PUBLIC_NAS_SLIM: process.env.NEXT_PUBLIC_NAS_SLIM,
+  NEXT_PUBLIC_DEFAULT_UI_LOCALE: process.env.NEXT_PUBLIC_DEFAULT_UI_LOCALE,
+});
 
 export function localizeGenerationError(message: string, t: LocaleStrings): string {
   const value = message.toLowerCase();

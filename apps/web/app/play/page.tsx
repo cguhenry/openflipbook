@@ -3780,7 +3780,7 @@ export default function PlayPage() {
               type="button"
               onClick={goBack}
               disabled={!canGoBack}
-              className="min-h-11 rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 disabled:opacity-30 sm:min-h-0 sm:py-1"
+              className="min-h-11 rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 disabled:opacity-30"
               title={t.goBackTitle}
             >
               ← {t.back}
@@ -3789,7 +3789,7 @@ export default function PlayPage() {
               type="button"
               onClick={goForward}
               disabled={!canGoForward}
-              className="min-h-11 rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 disabled:opacity-30 sm:min-h-0 sm:py-1"
+              className="min-h-11 rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 disabled:opacity-30"
               title={t.goForwardTitle}
             >
               {t.forward} →
@@ -3797,7 +3797,7 @@ export default function PlayPage() {
             <button
               type="button"
               onClick={() => setViewMode((m) => (m === "map" ? "page" : "map"))}
-              className="min-h-11 rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 sm:min-h-0 sm:py-1"
+              className="min-h-11 rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5"
               title={t.toggleMapTitle}
             >
               {viewMode === "map" ? `📄 ${t.page}` : `🗺 ${t.map}`}
@@ -3806,7 +3806,7 @@ export default function PlayPage() {
               href={`/atlas/${encodeURIComponent(sessionId)}`}
               target="_blank"
               rel="noreferrer"
-              className="flex min-h-11 items-center rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 sm:min-h-0 sm:py-1"
+              className="flex min-h-11 items-center rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5"
               title={t.openAtlasTitle}
             >
               ↗ {t.atlas}

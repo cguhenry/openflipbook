@@ -74,7 +74,7 @@ export default function SessionHistory({
         aria-expanded={open}
         aria-controls="session-history-panel"
         onClick={() => setOpen((value) => !value)}
-        className="min-h-11 rounded-full border border-[var(--color-ink)]/25 bg-[var(--color-paper)]/70 px-3 text-xs font-medium hover:bg-[var(--color-ink)]/10 sm:min-h-0 sm:py-1"
+        className="min-h-11 rounded-full border border-[var(--color-ink)]/25 bg-[var(--color-paper)]/70 px-3 text-xs font-medium hover:bg-[var(--color-ink)]/10"
       >
         {t.history}
       </button>
@@ -97,7 +97,7 @@ export default function SessionHistory({
                   setOpen(false);
                   onNewSession();
                 }}
-                className="min-h-11 rounded-full bg-[var(--color-ink)] px-3 text-[11px] text-[var(--color-canvas)] sm:min-h-0 sm:py-1"
+                className="min-h-11 rounded-full bg-[var(--color-ink)] px-3 text-[11px] text-[var(--color-canvas)]"
               >
                 {t.newSession}
               </button>
@@ -106,7 +106,7 @@ export default function SessionHistory({
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label={t.closeHistory}
-                className="min-h-11 min-w-11 rounded-full border border-[var(--color-edge)] text-lg sm:min-h-8 sm:min-w-8"
+                className="min-h-11 min-w-11 rounded-full border border-[var(--color-edge)] text-lg"
               >
                 ×
               </button>

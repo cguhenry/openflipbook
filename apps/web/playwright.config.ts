@@ -1,6 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:3000";
+const CHROMIUM_EXECUTABLE_PATH = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+const E_ACCEPTANCE = Boolean(process.env.E_RESULTS_DIR);
 // E2E_MOCK=1: the suite runs against the MOCK_PROVIDERS stack (the every-PR
 // CI gate). Generations return in seconds, so a hang should fail in minutes,
 // not the quarter-hour a real-model run legitimately needs.
@@ -21,10 +23,18 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
   use: {
     baseURL: BASE_URL,
-    trace: "retain-on-failure",
-    video: "retain-on-failure",
-    screenshot: "only-on-failure",
+    trace: E_ACCEPTANCE ? "off" : "retain-on-failure",
+    video: E_ACCEPTANCE ? "off" : "retain-on-failure",
+    screenshot: E_ACCEPTANCE ? "off" : "only-on-failure",
     viewport: { width: 1280, height: 800 },
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [{
+    name: "chromium",
+    use: {
+      ...devices["Desktop Chrome"],
+      ...(CHROMIUM_EXECUTABLE_PATH
+        ? { launchOptions: { executablePath: CHROMIUM_EXECUTABLE_PATH } }
+        : {}),
+    },
+  }],
 });

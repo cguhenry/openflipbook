@@ -29,9 +29,11 @@ describe("PageContractOverlay", () => {
     expect(html).toContain("[1]");
   });
 
-  it("never steals pointer events from the underlying image click handler", () => {
+  it("keeps empty overlay space click-through while DOM text remains selectable", () => {
     const html = renderToStaticMarkup(<PageContractOverlay pagePlan={plan} />);
     expect(html).toContain("pointer-events-none");
+    expect(html).toContain("pointer-events-auto");
+    expect(html).toContain("cursor-text select-text");
     expect(html).toContain('data-responsive-overlay="a3"');
   });
 

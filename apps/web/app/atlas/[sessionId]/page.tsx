@@ -6,6 +6,7 @@ import { readServerEnv } from "@/lib/env";
 import { getWorldState } from "@/lib/world";
 import { getWorldMap } from "@/lib/world-map";
 import { formatUi, getStrings } from "@/lib/i18n";
+import { nodeImagePath } from "@/lib/node-image";
 import type { SceneView, WorldEntityGeo } from "@openflipbook/config";
 import AtlasView, {
   type AtlasEntity,
@@ -54,13 +55,6 @@ const cachedSessionNodes = cache(async (sessionId: string): Promise<NodeRow[] | 
   }
 });
 
-function publicImageUrl(key: string): string | null {
-  const env = readServerEnv();
-  if (!env.R2_PUBLIC_BASE_URL) return null;
-  const base = env.R2_PUBLIC_BASE_URL.replace(/\/$/, "");
-  return `${base}/${key}`;
-}
-
 export async function generateMetadata({
   params,
 }: AtlasPageProps): Promise<Metadata> {
@@ -75,7 +69,7 @@ export async function generateMetadata({
   const root = nodes.find((n) => n.parent_id == null) ?? nodes[0]!;
   const title = `${t.atlas}：${root.page_title || root.query}`;
   const description = formatUi(t.atlasSessionDescription, { count: nodes.length });
-  const ogImage = publicImageUrl(root.image_key);
+  const ogImage = nodeImagePath(root.id);
   return {
     title,
     description,
@@ -84,13 +78,13 @@ export async function generateMetadata({
       title,
       description,
       url: `/atlas/${sessionId}`,
-      ...(ogImage ? { images: [{ url: ogImage }] } : {}),
+      images: [{ url: ogImage }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      ...(ogImage ? { images: [ogImage] } : {}),
+      images: [ogImage],
     },
     alternates: { canonical: `/atlas/${sessionId}` },
   };
@@ -138,13 +132,12 @@ export default async function AtlasPage({ params }: AtlasPageProps) {
     );
   }
 
-  const publicBase = env.R2_PUBLIC_BASE_URL!.replace(/\/$/, "");
   const nodes: AtlasNode[] = rows.map((row) => ({
     id: row.id,
     parentId: row.parent_id,
     title: row.page_title || row.query,
     query: row.query,
-    imageUrl: `${publicBase}/${row.image_key}`,
+    imageUrl: nodeImagePath(row.id),
     clickInParent: row.click_in_parent
       ? {
           xPct: row.click_in_parent.x_pct,

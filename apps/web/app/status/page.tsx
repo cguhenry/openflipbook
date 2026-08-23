@@ -2,6 +2,7 @@ import { readServerEnv } from "@/lib/env";
 import { listRecentErrors } from "@/lib/db";
 import { getStrings, type LocaleStrings } from "@/lib/i18n";
 import { modalAuthHeaders } from "@/lib/modal";
+import { readCoreReadiness } from "@/lib/readiness";
 
 export const dynamic = "force-dynamic";
 
@@ -101,11 +102,12 @@ export default async function StatusPage() {
   const rows = buildRows(env, t);
   const allRequired = rows.filter((r) => r.required).every((r) => r.ok);
 
-  const [backend, recentErrors] = await Promise.all([
+  const [backend, recentErrors, readiness] = await Promise.all([
     fetchBackendStatus(),
     env.MONGODB_URI && env.MONGODB_DB
       ? listRecentErrors(20).catch(() => [])
       : Promise.resolve([]),
+    readCoreReadiness(),
   ]);
 
   return (
@@ -164,6 +166,12 @@ export default async function StatusPage() {
       ) : (
         <ul className="mt-3 grid grid-cols-2 gap-2 text-sm">
           <li>
+            Backend:{" "}
+            <span className={readiness.backend ? "text-green-700" : "text-amber-700"}>
+              {readiness.backend ? t.connected : t.unavailable}
+            </span>
+          </li>
+          <li>
             OpenClaw:{" "}
             <span className={backend.openclaw_connected ? "text-green-700" : "text-amber-700"}>
               {backend.openclaw_connected ? t.connected : t.unavailable}
@@ -181,14 +189,14 @@ export default async function StatusPage() {
           <li>{t.mode}: <code>{backend.provider_mode ?? t.unknown}</code>{backend.mock_mode ? ` (${t.mock})` : ""}</li>
           <li>
             Mongo:{" "}
-            <span className={backend.mongo_connected === false ? "text-amber-700" : "text-green-700"}>
-              {backend.mongo_connected === false ? t.unavailable : backend.mongo_connected === true ? t.connected : t.configured}
+            <span className={readiness.mongo ? "text-green-700" : "text-amber-700"}>
+              {readiness.mongo ? t.connected : t.unavailable}
             </span>
           </li>
           <li>
             MinIO:{" "}
-            <span className={backend.minio_connected === false ? "text-amber-700" : "text-green-700"}>
-              {backend.minio_connected === false ? t.unavailable : backend.minio_connected === true ? t.connected : t.configured}
+            <span className={readiness.minio ? "text-green-700" : "text-amber-700"}>
+              {readiness.minio ? t.connected : t.unavailable}
             </span>
           </li>
           <li>{t.providerControl}: <code>{t.readOnly}</code></li>

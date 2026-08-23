@@ -39,6 +39,13 @@ describe("nodeToPage (?continue= hydration)", () => {
     expect(p.sources).toEqual([{ url: "https://a", title: "A" }]);
   });
 
+  it("uses the same-origin browser URL while preserving legacy fallback", () => {
+    expect(
+      nodeToPage(wire({ browser_image_url: "/api/image/n1" })).imageDataUrl,
+    ).toBe("/api/image/n1");
+    expect(nodeToPage(wire()).imageDataUrl).toBe("https://cdn/img.jpg");
+  });
+
   it("hydrates explicit source hotspot provenance and keeps legacy rows nullable", () => {
     expect(
       nodeToPage(wire({ parent_id: "n0", source_hotspot_id: "h007" }))

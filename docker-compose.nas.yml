@@ -1,7 +1,9 @@
 # NAS compatibility override for the local stack.
 #
 # Mongo 4.4 is required on the non-AVX NAS CPU. Published ports stay on the
-# NAS loopback so the stack is not exposed beyond the host.
+# NAS loopback except for the intended client-facing Web port.
+name: openflipbook-a0
+
 services:
   mongo:
     image: mongo:4.4
@@ -55,6 +57,15 @@ services:
       NEXT_PUBLIC_DETERMINISTIC_HITMAP: "1"
       NEXT_PUBLIC_HTML5_TRANSITIONS: "1"
       NEXT_PUBLIC_OFFLINE_EXPORT: "1"
+      NEXT_PUBLIC_DEFAULT_UI_LOCALE: "zh-TW"
       NEXT_PUBLIC_LTX_WS_URL: ""
     ports: !override
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
+
+volumes:
+  mongo-data:
+    name: openflipbook-a0_mongo-data
+    external: true
+  minio-data:
+    name: openflipbook-a0_minio-data
+    external: true

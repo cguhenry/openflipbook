@@ -7,6 +7,7 @@ export interface HeatmapChild {
   id: string;
   page_title: string;
   image_url: string | null;
+  browser_image_url?: string | null;
   click_in_parent: { x_pct: number; y_pct: number } | null;
   created_at: string;
 }
@@ -136,10 +137,10 @@ export default function HeatmapOverlay({
                 className="absolute left-4 top-0 z-10 w-48 rounded-lg border border-black/20 bg-white p-1.5 text-[11px] leading-snug text-black shadow-lg"
                 style={{ pointerEvents: "none" }}
               >
-                {p.image_url ? (
+                {p.browser_image_url ?? p.image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={p.image_url}
+                    src={p.browser_image_url ?? p.image_url ?? undefined}
                     alt=""
                     className="mb-1 block aspect-video w-full rounded object-cover"
                     draggable={false}

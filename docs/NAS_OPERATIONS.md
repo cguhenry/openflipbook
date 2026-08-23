@@ -65,6 +65,27 @@ fails. Restore and dry-run make zero provider/model/search calls.
 
 ## NAS compose defaults
 
+The repo-tracked canonical runtime is the merged base plus NAS override under
+Compose project `openflipbook-a0`. Always invoke it through the serial wrapper:
+
+```bash
+scripts/nas-compose.sh config --quiet
+scripts/nas-compose.sh up -d
+scripts/nas-compose.sh ps
+```
+
+The wrapper fixes both the project name and Compose files and exports
+`COMPOSE_PARALLEL_LIMIT=1`. Web, backend, Mongo, and MinIO share only
+`openflipbook-a0_default`; no workpack or Phase D overlay is required. Existing
+data remains in the external volumes `openflipbook-a0_mongo-data` and
+`openflipbook-a0_minio-data`.
+
+Only Web port `3000` is intended for NAS clients. Backend `8787`, Mongo `27017`,
+and MinIO `9000/9001` bind to `127.0.0.1`. Persisted legacy `image_url` values
+remain backward-compatible, but normal Web, permalink, atlas, heatmap, and
+postcard presentation reads images through `/api/image/<nodeId>` on the Web
+origin; client devices never need their own `localhost:9000`.
+
 `docker-compose.yml` keeps video and AI prefetch disabled, while enabling the
 existing HTML5 View Transition and offline-export paths. System
 `prefers-reduced-motion` is always honored; Settings can persist an additional
@@ -106,11 +127,11 @@ With a clean source tree, build and restart one application service at a time:
 
 ```bash
 export COMPOSE_PARALLEL_LIMIT=1
-docker compose build backend
-docker compose up -d --no-deps backend
+scripts/nas-compose.sh build backend
+scripts/nas-compose.sh up -d --no-deps backend
 curl -fsS http://127.0.0.1:8787/health
-docker compose build web
-docker compose up -d --no-deps web
+scripts/nas-compose.sh build web
+scripts/nas-compose.sh up -d --no-deps web
 curl -fsS http://127.0.0.1:3000/api/ready
 ```
 
@@ -127,7 +148,7 @@ then roll back Web and require `/api/ready`. Application rollback must leave
 Mongo and MinIO data in place; it does not require restoring a backup unless a
 separate, verified data migration changed persisted formats.
 
-Never use `docker compose down -v`, delete Compose volumes, drop the Mongo
+Never use `scripts/nas-compose.sh down -v`, delete Compose volumes, drop the Mongo
 database or collections, or delete/recreate the MinIO bucket. Do not use a Git
 hard reset as an operational rollback.
 

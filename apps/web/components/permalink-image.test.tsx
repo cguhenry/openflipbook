@@ -11,7 +11,7 @@ describe("PermalinkImage zh-TW chrome", () => {
     render(
       <PermalinkImage
         nodeId="node_123456789"
-        imageUrl="https://example.test/image.jpg"
+        imageUrl="/api/image/node_123456789"
         query="steam engine"
         sessionId="session_1"
       />,
@@ -20,5 +20,8 @@ describe("PermalinkImage zh-TW chrome", () => {
     expect(screen.getByRole("link", { name: "圖集" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "顯示其他人的點選位置" })).toBeTruthy();
     expect(screen.getByRole("img").getAttribute("alt")).toBe("依「steam engine」產生的插圖");
+    expect(screen.getByRole("img").getAttribute("src")).toBe(
+      "/api/image/node_123456789",
+    );
   });
 });

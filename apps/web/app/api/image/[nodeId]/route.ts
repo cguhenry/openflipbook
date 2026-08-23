@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getNode } from "@/lib/db";
 import { readServerEnv } from "@/lib/env";
+import { safeStoredImageMedia } from "@/lib/node-image";
 import { getStoredBytes } from "@/lib/r2";
 
 export const runtime = "nodejs";
@@ -31,14 +32,21 @@ export async function GET(req: Request, { params }: Params) {
   const stored = await getStoredBytes(row.image_key);
   if (!stored) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const ext = stored.contentType === "image/png" ? "png" : "jpg";
+  const media = safeStoredImageMedia(stored.contentType);
+  if (!media) {
+    return NextResponse.json(
+      { error: "unsupported image content type" },
+      { status: 415 },
+    );
+  }
   const download = new URL(req.url).searchParams.get("download") === "1";
   return new NextResponse(new Uint8Array(stored.bytes), {
     headers: {
-      "Content-Type": stored.contentType,
-      "Cache-Control": "public, max-age=31536000, immutable",
+      "Content-Type": media.contentType,
+      "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
       ...(download
-        ? { "Content-Disposition": `attachment; filename="openflipbook-${row.id}.${ext}"` }
+        ? { "Content-Disposition": `attachment; filename="openflipbook-${row.id}.${media.extension}"` }
         : {}),
     },
   });

@@ -64,7 +64,7 @@ export function PageContractOverlay({
           data-text-role={block.role}
           className={textBlockClass(block)}
         >
-          <span className="max-w-full overflow-wrap-anywhere rounded-md bg-[color:rgba(250,248,240,.86)] px-[clamp(.4rem,1.4vw,.7rem)] py-[clamp(.25rem,.9vw,.45rem)] text-[var(--color-ink)] shadow-sm backdrop-blur-[2px]">
+          <span className="pointer-events-auto max-w-full cursor-text select-text overflow-wrap-anywhere rounded-md bg-[color:rgba(250,248,240,.86)] px-[clamp(.4rem,1.4vw,.7rem)] py-[clamp(.25rem,.9vw,.45rem)] text-[var(--color-ink)] shadow-sm backdrop-blur-[2px]">
             {block.text}
             {citationNumbers(block, pagePlan.sources).map((number) => (
               <sup

@@ -79,7 +79,7 @@ export function QueryToolbar({
       >
         <input
           autoFocus
-          className="min-h-11 min-w-0 basis-full bg-transparent px-2 outline-none placeholder:opacity-60 sm:min-h-0 sm:basis-auto"
+          className="min-h-11 min-w-0 basis-full bg-transparent px-2 outline-none placeholder:opacity-60 sm:basis-auto"
           placeholder={t.placeholder}
           value={input}
           onChange={(e) => onInputChange(e.target.value)}
@@ -88,7 +88,7 @@ export function QueryToolbar({
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={busy}
-          className="min-h-11 rounded-full border border-[var(--color-edge)] px-4 text-xs hover:bg-[var(--color-ink)]/5 disabled:opacity-40 sm:min-h-0 sm:px-3 sm:py-1"
+          className="min-h-11 rounded-full border border-[var(--color-edge)] px-4 text-xs hover:bg-[var(--color-ink)]/5 disabled:opacity-40 sm:px-3"
           title={t.uploadTitle}
         >
           {t.upload}
@@ -230,7 +230,7 @@ export function QueryToolbar({
         <button
           type="submit"
           disabled={busy || input.trim().length === 0}
-          className="min-h-11 flex-1 rounded-full bg-[var(--color-ink)] px-4 text-[var(--color-canvas)] disabled:opacity-40 sm:min-h-0 sm:flex-none sm:py-1"
+          className="min-h-11 flex-1 rounded-full bg-[var(--color-ink)] px-4 text-[var(--color-canvas)] disabled:opacity-40 sm:flex-none"
         >
           {busy ? t.generating : t.go}
         </button>

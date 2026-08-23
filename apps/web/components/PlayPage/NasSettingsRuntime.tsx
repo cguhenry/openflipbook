@@ -214,7 +214,7 @@ export function NasSettingsRuntime({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(true)}
-        className="min-h-11 rounded-full border border-[var(--color-ink)]/25 bg-[var(--color-paper)]/70 px-3 text-xs font-medium hover:bg-[var(--color-ink)]/10 sm:min-h-0 sm:py-1"
+        className="min-h-11 rounded-full border border-[var(--color-ink)]/25 bg-[var(--color-paper)]/70 px-3 text-xs font-medium hover:bg-[var(--color-ink)]/10"
       >
         {t.settings}
       </button>
@@ -241,7 +241,7 @@ export function NasSettingsRuntime({
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label={t.closeSettings}
-                className="min-h-11 min-w-11 rounded-full border border-[var(--color-edge)] text-xl sm:min-h-9 sm:min-w-9"
+                className="min-h-11 min-w-11 rounded-full border border-[var(--color-edge)] text-xl"
               >
                 ×
               </button>
@@ -256,7 +256,7 @@ export function NasSettingsRuntime({
                     aria-label={t.uiLanguage}
                     value={uiLocale}
                     onChange={(event) => setUiLocale(event.target.value as SupportedUiLocale)}
-                    className="min-h-11 rounded-lg border border-[var(--color-edge)] bg-transparent px-3 sm:min-h-9"
+                    className="min-h-11 rounded-lg border border-[var(--color-edge)] bg-transparent px-3"
                   >
                     {SUPPORTED_UI_LOCALES.map((locale) => (
                       <option key={locale} value={locale}>{localeDisplayName(locale, t)}</option>
@@ -269,7 +269,7 @@ export function NasSettingsRuntime({
                     aria-label={t.outputLanguage}
                     value={outputLocale}
                     onChange={(event) => setOutputLocale(event.target.value as SupportedOutputLocale)}
-                    className="min-h-11 rounded-lg border border-[var(--color-edge)] bg-transparent px-3 sm:min-h-9"
+                    className="min-h-11 rounded-lg border border-[var(--color-edge)] bg-transparent px-3"
                   >
                     {SUPPORTED_OUTPUT_LOCALES.map((locale) => (
                       <option key={locale} value={locale}>{localeDisplayName(locale, t)}</option>
@@ -285,7 +285,7 @@ export function NasSettingsRuntime({
                         type="button"
                         aria-pressed={theme === item}
                         onClick={() => setTheme(item)}
-                        className={`min-h-11 px-3 text-xs sm:min-h-9 ${theme === item ? "bg-[var(--color-ink)] text-[var(--color-canvas)]" : ""}`}
+                        className={`min-h-11 px-3 text-xs ${theme === item ? "bg-[var(--color-ink)] text-[var(--color-canvas)]" : ""}`}
                       >
                         {item === "light" ? t.themeLight : item === "sepia" ? t.themeSepia : t.themeDark}
                       </button>
@@ -367,7 +367,7 @@ export function NasSettingsRuntime({
                     type="button"
                     onClick={() => void loadStatus()}
                     disabled={statusLoading}
-                    className="min-h-9 rounded-full border border-[var(--color-edge)] px-3 text-xs disabled:opacity-40"
+                    className="min-h-11 rounded-full border border-[var(--color-edge)] px-3 text-xs disabled:opacity-40"
                   >
                     {t.refresh}
                   </button>

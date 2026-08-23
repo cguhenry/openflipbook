@@ -1,6 +1,6 @@
 # openflipbook — private NAS self-use stack.
 #
-#   docker compose up --build     # → http://localhost:3000/play
+#   scripts/nas-compose.sh up -d --build     # → http://localhost:3000/play
 #
 # Stores run fully local: Mongo for metadata, Minio (S3-compatible) for image
 # blobs. The only live AI path is the authenticated OpenClaw Gateway configured
@@ -44,8 +44,9 @@ services:
       "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) }"
 
   # S3-compatible blob store — the local stand-in for Cloudflare R2. The web
-  # app writes here (R2_ENDPOINT=http://minio:9000) and the browser reads image
-  # URLs from the published port (R2_PUBLIC_BASE_URL=http://localhost:9000/...).
+  # app writes and reads here over the Compose network. Persisted legacy
+  # image_url values retain R2_PUBLIC_BASE_URL, while normal browser rendering
+  # uses the same-origin /api/image/<nodeId> route.
   minio:
     image: minio/minio:latest
     container_name: openflipbook-minio
@@ -200,7 +201,8 @@ services:
       MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
       MONGODB_DB: ${MONGODB_DB:-openflipbook}
       # Blobs → local Minio by default. R2_ENDPOINT makes the S3 client target
-      # Minio (path-style); the public base URL is what the browser fetches.
+      # Minio (path-style). R2_PUBLIC_BASE_URL remains the stored/provider-facing
+      # legacy URL; browser presentation uses /api/image/<nodeId> on Web.
       R2_ENDPOINT: ${R2_ENDPOINT:-http://minio:9000}
       R2_BUCKET: ${R2_BUCKET:-openflipbook}
       R2_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-openflipbook}

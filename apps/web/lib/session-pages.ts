@@ -53,6 +53,7 @@ export interface SessionNodeWire {
   query: string;
   page_title: string;
   image_url: string;
+  browser_image_url?: string;
   click_in_parent: { x_pct: number; y_pct: number } | null;
   sources?: {
     id?: string;
@@ -109,7 +110,7 @@ export function nodeToPage(n: SessionNodeWire): Page {
     sessionId: n.session_id,
     query: n.query,
     title: n.page_title,
-    imageDataUrl: n.image_url,
+    imageDataUrl: n.browser_image_url ?? n.image_url,
     parentId: n.parent_id,
     sourceHotspotId: n.source_hotspot_id ?? null,
     sources: Array.isArray(n.sources) ? n.sources : [],

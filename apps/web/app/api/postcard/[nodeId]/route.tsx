@@ -5,7 +5,9 @@ import QRCode from "qrcode";
 import { getNode } from "@/lib/db";
 import { readServerEnv } from "@/lib/env";
 import { DEFAULT_UI_LOCALE, normalizeUiLocale } from "@/lib/i18n";
+import { safeStoredImageMedia } from "@/lib/node-image";
 import { postcardLayout, type PostcardNode } from "@/lib/postcard";
+import { getStoredBytes } from "@/lib/r2";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +26,15 @@ export async function GET(req: Request, { params }: Params) {
   const row = await getNode(nodeId);
   if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const publicBase = env.R2_PUBLIC_BASE_URL.replace(/\/$/, "");
+  const stored = await getStoredBytes(row.image_key);
+  if (!stored) return NextResponse.json({ error: "not found" }, { status: 404 });
+  const media = safeStoredImageMedia(stored.contentType);
+  if (!media) {
+    return NextResponse.json(
+      { error: "unsupported image content type" },
+      { status: 415 },
+    );
+  }
   const reqUrl = new URL(req.url);
   const uiLocale = normalizeUiLocale(
     reqUrl.searchParams.get("ui_locale") ?? DEFAULT_UI_LOCALE,
@@ -42,7 +52,7 @@ export async function GET(req: Request, { params }: Params) {
   const node: PostcardNode = {
     nodeId: row.id,
     title: row.page_title || row.query,
-    imageUrl: `${publicBase}/${row.image_key}`,
+    imageUrl: `data:${media.contentType};base64,${stored.bytes.toString("base64")}`,
     citationCount: row.sources.length,
     locale: uiLocale,
   };
