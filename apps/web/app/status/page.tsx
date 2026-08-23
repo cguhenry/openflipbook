@@ -18,7 +18,7 @@ interface BackendStatus {
   uptime_s?: number;
   in_flight?: number;
   last_error_ts?: number | null;
-  providers?: { fal?: boolean; openrouter?: boolean };
+  providers?: { openclaw?: boolean };
   live_provider?: string;
   provider_mode?: string;
   openclaw_connected?: boolean;
@@ -28,6 +28,17 @@ interface BackendStatus {
   mongo_connected?: boolean | null;
   minio_connected?: boolean | null;
   mock_mode?: boolean;
+  alternate_provider_fallback?: boolean;
+  breakers?: Record<string, {
+    state?: string;
+    consecutive_failures?: number;
+    retry_after_seconds?: number;
+  }>;
+  usage?: {
+    scope?: string;
+    counters?: Record<string, number>;
+    caps?: { runtime_generations?: number; session_generations?: number };
+  };
   error?: string;
 }
 
@@ -53,7 +64,7 @@ function buildRows(env: ReturnType<typeof readServerEnv>): Row[] {
       key: "MODAL_API_URL",
       required: true,
       ok: Boolean(env.MODAL_API_URL),
-      hint: "URL printed by `modal deploy generate.py`.",
+      hint: "Internal URL of the OpenFlipbook backend.",
     },
     {
       key: "MONGODB_URI + MONGODB_DB",
@@ -62,22 +73,16 @@ function buildRows(env: ReturnType<typeof readServerEnv>): Row[] {
       hint: "MongoDB connection string + database name for the node graph.",
     },
     {
-      key: "R2_ACCOUNT_ID + R2_BUCKET + R2 keys",
+      key: "MinIO / S3 object storage",
       required: true,
       ok: Boolean(
-        env.R2_ACCOUNT_ID &&
+        (env.R2_ENDPOINT || env.R2_ACCOUNT_ID) &&
           env.R2_ACCESS_KEY_ID &&
           env.R2_SECRET_ACCESS_KEY &&
           env.R2_BUCKET &&
           env.R2_PUBLIC_BASE_URL
       ),
-      hint: "Cloudflare R2 for generated image blobs.",
-    },
-    {
-      key: "NEXT_PUBLIC_LTX_WS_URL",
-      required: false,
-      ok: Boolean(process.env.NEXT_PUBLIC_LTX_WS_URL),
-      hint: "Optional: WS URL from `modal deploy ltx_stream.py` for the self-hosted streaming path. If unset, /play falls back to the cheap fal-ai/ltx-video clip.",
+      hint: "Private object storage for generated images and owner backups.",
     },
   ];
 }
@@ -110,8 +115,8 @@ export default async function StatusPage() {
         }`}
       >
         {allRequired
-          ? "All required env vars are set — /play should generate pages."
-          : "Some required env vars are missing. /play will show BYO-key errors."}
+          ? "All required NAS services are configured."
+          : "Some required NAS service configuration is missing."}
       </div>
 
       <ul className="mt-6 space-y-3">
@@ -178,29 +183,29 @@ export default async function StatusPage() {
               {backend.minio_connected === false ? "unavailable" : backend.minio_connected === true ? "connected" : "configured"}
             </span>
           </li>
+          <li>provider control: <code>read-only</code></li>
+          <li>fallback: <code>{backend.alternate_provider_fallback ? "unexpectedly enabled" : "none"}</code></li>
           <li>
-            fal:{" "}
-            <span
-              className={
-                backend.providers?.fal
-                  ? "text-green-700"
-                  : "text-amber-700"
-              }
-            >
-              {backend.providers?.fal ? "ok" : "down"}
-            </span>
+            responses breaker: <code>{backend.breakers?.responses?.state ?? "unknown"}</code>
+            {backend.breakers?.responses?.retry_after_seconds
+              ? ` (${backend.breakers.responses.retry_after_seconds}s)`
+              : ""}
           </li>
           <li>
-            openrouter:{" "}
-            <span
-              className={
-                backend.providers?.openrouter
-                  ? "text-green-700"
-                  : "text-amber-700"
-              }
-            >
-              {backend.providers?.openrouter ? "ok" : "down"}
-            </span>
+            image breaker: <code>{backend.breakers?.image?.state ?? "unknown"}</code>
+            {backend.breakers?.image?.retry_after_seconds
+              ? ` (${backend.breakers.image.retry_after_seconds}s)`
+              : ""}
+          </li>
+          <li>generations: {backend.usage?.counters?.generation_requests ?? 0}</li>
+          <li>successful: {backend.usage?.counters?.generation_success ?? 0}</li>
+          <li>failed: {backend.usage?.counters?.generation_failed ?? 0}</li>
+          <li>cancelled: {backend.usage?.counters?.generation_cancelled ?? 0}</li>
+          <li>planner calls: {backend.usage?.counters?.planner_calls ?? 0}</li>
+          <li>alignment calls: {backend.usage?.counters?.alignment_calls ?? 0}</li>
+          <li>image calls: {backend.usage?.counters?.image_calls ?? 0}</li>
+          <li className="col-span-2 opacity-70">
+            Usage scope: {backend.usage?.scope ?? "since backend start"}; caps runtime {backend.usage?.caps?.runtime_generations || "unlimited"}, session {backend.usage?.caps?.session_generations || "unlimited"}.
           </li>
           <li>uptime: {backend.uptime_s ?? "—"}s</li>
           <li>in-flight: {backend.in_flight ?? 0}</li>

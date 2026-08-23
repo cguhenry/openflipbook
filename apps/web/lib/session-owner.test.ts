@@ -21,6 +21,19 @@ const fakeCollection = {
     if (knobs.findNull) return null;
     return store.get(filter._id) ?? null;
   },
+  find(filter: { owner_token: string }) {
+    const rows = [...store.values()]
+      .filter((row) => row.owner_token === filter.owner_token)
+      .sort((a, b) => a._id.localeCompare(b._id));
+    return {
+      sort() {
+        return this;
+      },
+      async toArray() {
+        return rows;
+      },
+    };
+  },
 };
 
 vi.mock("./db", () => ({
@@ -42,7 +55,13 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
-import { claimOrVerify, requireOwner, verifyOwnerReadonly } from "./session-owner";
+import {
+  claimOrVerify,
+  currentOwnerToken,
+  listCurrentOwnerSessionIds,
+  requireOwner,
+  verifyOwnerReadonly,
+} from "./session-owner";
 
 describe("claimOrVerify (session ownership)", () => {
   beforeEach(() => {
@@ -152,6 +171,41 @@ describe("requireOwner (mutation gate)", () => {
         error: "this session belongs to another browser",
       });
     }
+  });
+});
+
+describe("current-browser owner backup selection", () => {
+  beforeEach(() => {
+    store.clear();
+    jar.token = null;
+    jar.sets.length = 0;
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("returns no sessions and does not mint during read-only export discovery", async () => {
+    CONFIGURED();
+    await claimOrVerify("session-a", "mine");
+
+    expect(await listCurrentOwnerSessionIds()).toEqual([]);
+    expect(jar.sets).toHaveLength(0);
+  });
+
+  it("returns only sessions owned by the current browser token", async () => {
+    CONFIGURED();
+    await claimOrVerify("session-b", "mine");
+    await claimOrVerify("session-a", "mine");
+    await claimOrVerify("session-other", "other");
+    jar.token = "mine";
+
+    expect(await listCurrentOwnerSessionIds()).toEqual(["session-a", "session-b"]);
+  });
+
+  it("mints an httpOnly owner token only when confirmed restore requests it", async () => {
+    CONFIGURED();
+
+    expect(await currentOwnerToken({ mint: true })).toBeTruthy();
+    expect(jar.sets).toHaveLength(1);
+    expect(jar.sets[0]?.opts.httpOnly).toBe(true);
   });
 });
 

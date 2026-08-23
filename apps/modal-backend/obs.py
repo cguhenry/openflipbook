@@ -411,34 +411,39 @@ async def _check_provider(name: str, url: str) -> bool:
 
 async def status_payload(service: str) -> dict[str, Any]:
     """Build the payload for /status endpoints. Cheap; safe to call often."""
+    from providers import openclaw_runtime, usage
+
     mock_mode = env_flag("MOCK_PROVIDERS")
     openclaw_connected = False
+    openclaw_live = False
     planner_vision_model = "openai/gpt-5.6-luna"
     image_model = "openai/gpt-image-2"
     live_provider = "mock" if mock_mode else "legacy"
-    if not mock_mode:
-        from providers import openclaw_runtime
-
-        if openclaw_runtime.enabled():
-            live_provider = "openclaw"
-            planner_vision_model = openclaw_runtime.text_model()
-            image_model = openclaw_runtime.image_model()
-            try:
-                await openclaw_runtime.OpenClawGatewayClient().authenticated_health()
-                openclaw_connected = True
-            except Exception:
-                openclaw_connected = False
+    if not mock_mode and openclaw_runtime.enabled():
+        openclaw_live = True
+        live_provider = "openclaw"
+        planner_vision_model = openclaw_runtime.text_model()
+        image_model = openclaw_runtime.image_model()
+        try:
+            await openclaw_runtime.OpenClawGatewayClient().authenticated_health()
+            openclaw_connected = True
+        except Exception:
+            openclaw_connected = False
     if mock_mode:
         # Mock mode is a complete provider substitute. Do not probe real cloud
         # providers merely to render /status; keeping booleans True preserves
         # the existing status payload/UI shape while provider_mode is explicit.
-        fal_ok = True
-        openrouter_ok = True
+        providers = {"fal": True, "openrouter": True}
+    elif openclaw_live:
+        # The NAS provider path has no alternate-provider failover. Do not
+        # probe FAL/OpenRouter merely to render runtime state.
+        providers = {"openclaw": openclaw_connected}
     else:
         fal_ok, openrouter_ok = await asyncio.gather(
             _check_provider("fal", "https://fal.run/health"),
             _check_provider("openrouter", "https://openrouter.ai/api/v1/models"),
         )
+        providers = {"fal": fal_ok, "openrouter": openrouter_ok}
     return {
         "live_provider": live_provider,
         "provider_mode": "mock" if mock_mode else "live",
@@ -457,8 +462,12 @@ async def status_payload(service: str) -> dict[str, Any]:
         "mongo_connected": None,
         "minio_connected": None,
         "mock_mode": mock_mode,
-        "providers": {
-            "fal": fal_ok,
-            "openrouter": openrouter_ok,
-        },
+        "providers": providers,
+        "provider_control": "read_only",
+        "model_control": "read_only",
+        "alternate_provider_fallback": (
+            False if openclaw_live else env_flag("PROVIDER_FALLBACK")
+        ),
+        "breakers": openclaw_runtime.breaker_snapshot(),
+        "usage": usage.snapshot(),
     }

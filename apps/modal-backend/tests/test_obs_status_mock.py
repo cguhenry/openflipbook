@@ -5,6 +5,7 @@ import json
 import pytest
 
 import obs
+from providers import breaker, openclaw_runtime, usage
 
 
 @pytest.mark.asyncio
@@ -57,3 +58,46 @@ async def test_status_payload_live_mode_preserves_provider_checks(monkeypatch):
     assert payload["provider_mode"] == "live"
     assert payload["providers"] == {"fal": True, "openrouter": True}
     assert {name for name, _ in calls} == {"fal", "openrouter"}
+
+
+@pytest.mark.asyncio
+async def test_status_payload_openclaw_is_read_only_and_never_probes_alternates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MOCK_PROVIDERS", raising=False)
+    monkeypatch.setenv("FLIPBOOK_LIVE_PROVIDER", "openclaw")
+    monkeypatch.setenv("FLIPBOOK_OPENCLAW_TEXT_MODEL", "openai/gpt-5.6-luna")
+    monkeypatch.setenv("FLIPBOOK_OPENCLAW_IMAGE_MODEL", "openai/gpt-image-2")
+    usage.reset_for_tests()
+    breaker.reset_for_tests()
+    usage.record_provider_call("planner")
+    breaker.record_failure("openclaw:responses")
+
+    async def fake_health(_self: object) -> dict[str, bool]:
+        return {"ok": True}
+
+    async def forbidden_check(name: str, url: str) -> bool:
+        raise AssertionError(f"OpenClaw status probed alternate {name}: {url}")
+
+    monkeypatch.setattr(
+        openclaw_runtime.OpenClawGatewayClient,
+        "authenticated_health",
+        fake_health,
+    )
+    monkeypatch.setattr(obs, "_check_provider", forbidden_check)
+
+    payload = await obs.status_payload("test")
+
+    assert payload["providers"] == {"openclaw": True}
+    assert payload["provider_control"] == "read_only"
+    assert payload["model_control"] == "read_only"
+    assert payload["alternate_provider_fallback"] is False
+    assert payload["breakers"]["responses"]["consecutive_failures"] == 1
+    assert payload["usage"]["scope"] == "since backend start"
+    assert payload["usage"]["counters"]["planner_calls"] == 1
+    serialized = json.dumps(payload)
+    for forbidden in ("flipbook_openclaw_base_url", "bearer", "password", "token"):
+        assert forbidden not in serialized.lower()
+
+    usage.reset_for_tests()
+    breaker.reset_for_tests()

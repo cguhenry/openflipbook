@@ -8,8 +8,11 @@ type ViewTransitionDocument = Document & {
   startViewTransition?: (update: () => void) => ViewTransitionLike;
 };
 
-export function reducedMotion(win: Pick<Window, "matchMedia"> = window): boolean {
-  return win.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+export function reducedMotion(
+  win: Pick<Window, "matchMedia"> = window,
+  forceReduced = false,
+): boolean {
+  return forceReduced || (win.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false);
 }
 
 function runCssFallback(update: () => void, root: HTMLElement): void {
@@ -28,6 +31,7 @@ export function runPageViewTransition(
   origin: TransitionOrigin = {},
   doc: Document = document,
   win: Pick<Window, "matchMedia"> = window,
+  forceReduced = false,
 ): ViewTransitionLike | null {
   const root = doc.documentElement;
   const x = Math.min(1, Math.max(0, origin.xPct ?? 0.5));
@@ -36,7 +40,11 @@ export function runPageViewTransition(
   root.style.setProperty("--flipbook-transition-y", y * 100 + "%");
 
   const vtDoc = doc as ViewTransitionDocument;
-  if (reducedMotion(win) || typeof vtDoc.startViewTransition !== "function") {
+  if (reducedMotion(win, forceReduced)) {
+    update();
+    return null;
+  }
+  if (typeof vtDoc.startViewTransition !== "function") {
     runCssFallback(update, root);
     return null;
   }

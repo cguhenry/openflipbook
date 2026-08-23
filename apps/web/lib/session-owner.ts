@@ -34,6 +34,34 @@ async function owners(): Promise<Collection<OwnerDoc>> {
   return (await getDb()).collection<OwnerDoc>(COLLECTION);
 }
 
+/** Read the browser owner token without ever returning it to a route payload. */
+export async function currentOwnerToken(options: { mint?: boolean } = {}): Promise<string | null> {
+  if (!ownershipStoreConfigured()) return null;
+  const store = await cookies();
+  let token = store.get(OWNER_COOKIE)?.value ?? null;
+  if (!token && options.mint) {
+    token = crypto.randomUUID();
+    store.set(OWNER_COOKIE, token, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: ONE_YEAR_S,
+    });
+  }
+  return token;
+}
+
+/** Session ids owned by this exact browser cookie; no cookie means no rows. */
+export async function listCurrentOwnerSessionIds(): Promise<string[]> {
+  const token = await currentOwnerToken();
+  if (!token) return [];
+  const docs = await (await owners())
+    .find({ owner_token: token }, { projection: { _id: 1 } })
+    .sort({ _id: 1 })
+    .toArray();
+  return docs.map((doc) => doc._id).filter(isSafeId);
+}
+
 /** Ownership needs a persistent store; without Mongo there's nothing to own. */
 function ownershipStoreConfigured(): boolean {
   return Boolean(process.env.MONGODB_URI && process.env.MONGODB_DB);
@@ -93,17 +121,8 @@ export async function requireOwner(sessionId: string): Promise<OwnerCheck> {
   // No store configured → nothing is persisted to own, so ownership can't (and
   // needn't) be enforced. Don't crash the no-persistence demo mode.
   if (!ownershipStoreConfigured()) return { ok: true };
-  const store = await cookies();
-  let token = store.get(OWNER_COOKIE)?.value ?? null;
-  if (!token) {
-    token = crypto.randomUUID();
-    store.set(OWNER_COOKIE, token, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: ONE_YEAR_S,
-    });
-  }
+  const token = await currentOwnerToken({ mint: true });
+  if (!token) return { ok: true };
   const verdict = await claimOrVerify(sessionId, token);
   if (verdict === "forbidden") {
     return {

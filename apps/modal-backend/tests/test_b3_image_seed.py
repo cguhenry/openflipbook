@@ -7,7 +7,9 @@ import httpx
 import pytest
 
 import generate
-from providers import spend
+from contracts.image_seed_contract import normalize_image_seed_envelope
+from contracts.mock_page_contract import build_mock_image_seed_payload
+from providers import openclaw_runtime, spend
 
 
 def _image_data_url() -> str:
@@ -53,3 +55,38 @@ async def test_mock_image_seed_is_one_metered_vision_call_without_generation(
         row["id"] for row in payload["aligned_hotspots"]
     }
     assert all("tap_region" in row for row in payload["aligned_hotspots"])
+
+
+@pytest.mark.asyncio
+async def test_openclaw_image_seed_ignores_legacy_dollar_cap_and_estimate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MOCK_PROVIDERS", raising=False)
+    monkeypatch.setenv("FLIPBOOK_LIVE_PROVIDER", "openclaw")
+    monkeypatch.setenv("MAX_DAILY_SPEND", "0.01")
+    spend.reset_for_tests()
+    spend.record("legacy-estimate", 10.0)
+    page_plan, aligned_hotspots = normalize_image_seed_envelope(
+        build_mock_image_seed_payload()
+    )
+    calls: list[str] = []
+
+    async def fake_image_seed(_client: Any, image_data_url: str):
+        calls.append(image_data_url)
+        return page_plan, aligned_hotspots
+
+    def forbidden_spend(_session_id: str) -> float:
+        raise AssertionError("OpenClaw OAuth path recorded a guessed dollar estimate")
+
+    monkeypatch.setattr(openclaw_runtime.OpenClawGatewayClient, "image_seed", fake_image_seed)
+    monkeypatch.setattr(spend, "record_vlm_call", forbidden_spend)
+
+    transport = httpx.ASGITransport(app=generate.fastapi_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/image-seed",
+            json={"session_id": "session-a", "image_data_url": _image_data_url()},
+        )
+
+    assert response.status_code == 200
+    assert calls == [_image_data_url()]

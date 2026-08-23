@@ -5,6 +5,7 @@ import { inlineStoredImage } from "@/lib/r2";
 import { resolveEntitiesForPrompt } from "@/lib/world";
 import { getWorldMap } from "@/lib/world-map";
 import { modalAuthHeaders, modalUrl as joinModalUrl } from "@/lib/modal";
+import { PRODUCT_FLAGS } from "@/lib/product-flags";
 import { verifyOwnerReadonly } from "@/lib/session-owner";
 import {
   claimIdempotencyKey,
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
   }
   let keepClaim = false;
   try {
-    if (guardBody?.session_id) {
+    if (guardBody?.session_id && !PRODUCT_FLAGS.nasSlim) {
       // Durable global + per-session spend cap (Mongo-backed; shared across
       // replicas and restart-proof — the backend meter is only per-container).
       const reason = await spendOverCap(guardBody.session_id);

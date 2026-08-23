@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from providers import usage
 from providers.cancel_registry import GenerationCancelled, GenerationCancelRegistry
 from providers.grounded_contract import inject_canonical_sources
 from providers.searxng_grounding import (
@@ -51,6 +52,7 @@ def test_normalize_dedupes_and_caps_per_host() -> None:
 
 @pytest.mark.asyncio
 async def test_searxng_client_posts_json_search() -> None:
+    usage.reset_for_tests()
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/search"
         body = request.content.decode()
@@ -75,6 +77,8 @@ async def test_searxng_client_posts_json_search() -> None:
     finally:
         await client.aclose()
     assert rows[0].id == "S1"
+    assert usage.snapshot()["counters"]["searxng_searches"] == 1
+    usage.reset_for_tests()
 
 
 @pytest.mark.asyncio

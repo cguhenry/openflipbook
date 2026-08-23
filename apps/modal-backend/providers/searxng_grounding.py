@@ -172,6 +172,9 @@ class SearxngClient:
         language: str = "all",
         limit: int = 5,
     ) -> list[GroundingSource]:
+        from providers import usage
+
+        usage.record_searxng_search()
         response = await self._client.post(
             "/search",
             data={

@@ -46,6 +46,10 @@ describe("SessionHistory", () => {
     );
     expect(resume).toBeTruthy();
     expect(container.textContent).toContain("3 pages · 1 branches · image seed");
+    const close = container.querySelector('button[aria-label="Close history"]');
+    expect(close).toBeTruthy();
+    expect(document.activeElement).toBe(close);
+    expect(document.getElementById("session-history-panel")?.className).toContain("inset-x-3");
     resume!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onResume).toHaveBeenCalledWith("s-new");
 

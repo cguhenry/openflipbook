@@ -1,12 +1,10 @@
-# openflipbook — one-command local stack.
+# openflipbook — private NAS self-use stack.
 #
-#   cp .env.example .env          # drop in FAL_KEY (+ OPENROUTER_API_KEY)
 #   docker compose up --build     # → http://localhost:3000/play
 #
 # Stores run fully local: Mongo for metadata, Minio (S3-compatible) for image
-# blobs — so no Cloudflare R2 / hosted Mongo to provision. The AI still calls
-# out (OpenRouter for the planner/VLM, fal for images). For a no-cloud LLM too,
-# add the Ollama override:  make demo-local  (see docker-compose.local.yml).
+# blobs. The only live AI path is the authenticated OpenClaw Gateway configured
+# on the backend service; this profile has no direct provider-key fallback.
 #
 # Overridable defaults are read from `.env` (compose auto-loads it); the values
 # below are the local-stack fallbacks, so a bare `docker compose up` just works.
@@ -96,9 +94,9 @@ services:
     user: "1000:1000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # Keys come from the root .env (single-file demo) or, for power users, the
-    # backend's own .env which overrides it. Both optional; neither clobbers
-    # unset keys.
+    # Optional feature/config values come from the root .env or backend .env.
+    # OpenClaw authentication itself is supplied only by the read-only secret
+    # mount below.
     env_file:
       - path: .env
         required: false
@@ -132,13 +130,16 @@ services:
       FLIPBOOK_OPENCLAW_MAX_CONCURRENT: "1"
       FLIPBOOK_OPENCLAW_REQUEST_TIMEOUT_S: "90"
       FLIPBOOK_OPENCLAW_IMAGE_TIMEOUT_S: "180"
+      # Honest operational generation caps. Zero means unlimited; rejection
+      # occurs before any OpenClaw/SearXNG dispatch.
+      FLIPBOOK_MAX_RUNTIME_GENERATIONS: ${FLIPBOOK_MAX_RUNTIME_GENERATIONS:-0}
+      FLIPBOOK_MAX_SESSION_GENERATIONS: ${FLIPBOOK_MAX_SESSION_GENERATIONS:-0}
       FLIPBOOK_SEARXNG_BASE_URL: ${FLIPBOOK_SEARXNG_BASE_URL:-http://host.docker.internal:8081}
     volumes:
       - /volume1/docker/openclaw/openclaw-data/workspace/projects/_runtime-secrets/openflipbook-nas/openclaw-gateway-secret:/run/secrets/openclaw_gateway_secret:ro
     # Force public resolvers — Docker's default 127.0.0.11 link-local resolver
-    # has been flaking on the fal.ai / r2.cloudflarestorage.com hosts during
-    # E2E runs (sporadic ESERVFAIL / EAI_AGAIN), which manifests as
-    # ConnectError mid-stream and tanks the click-to-next + style-pin tests.
+    # has previously produced sporadic ESERVFAIL / EAI_AGAIN for required
+    # external endpoints during integration runs.
     dns:
       - 1.1.1.1
       - 8.8.8.8
@@ -171,8 +172,8 @@ services:
         NEXT_PUBLIC_DOM_LABELS: ${NEXT_PUBLIC_DOM_LABELS:-${WORLD_MODE:-false}}
         NEXT_PUBLIC_ON_RAMP_COACH: ${NEXT_PUBLIC_ON_RAMP_COACH:-false}
         NEXT_PUBLIC_ENTER_COACH: ${NEXT_PUBLIC_ENTER_COACH:-false}
-        NEXT_PUBLIC_HTML5_TRANSITIONS: ${NEXT_PUBLIC_HTML5_TRANSITIONS:-false}
-        NEXT_PUBLIC_OFFLINE_EXPORT: ${NEXT_PUBLIC_OFFLINE_EXPORT:-false}
+        NEXT_PUBLIC_HTML5_TRANSITIONS: ${NEXT_PUBLIC_HTML5_TRANSITIONS:-true}
+        NEXT_PUBLIC_OFFLINE_EXPORT: ${NEXT_PUBLIC_OFFLINE_EXPORT:-true}
     container_name: openflipbook-web
     restart: unless-stopped
     # Same posture as the backend: the root .env (single-file demo) carries

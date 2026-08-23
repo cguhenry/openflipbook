@@ -1,4 +1,9 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { readServerEnv, requireR2 } from "./env";
 
 let cachedClient: S3Client | null = null;
@@ -69,6 +74,34 @@ export async function uploadJpeg(
     })
   );
   return { key, url: `${publicBaseUrl}/${key}`, contentType };
+}
+
+/** Create-only write used by owner restore; never overwrites an existing key. */
+export async function putStoredBytesCreateOnly(
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  if (!key || key.startsWith("/") || key.includes("\\") || key.split("/").includes("..")) {
+    throw new Error("unsafe storage key");
+  }
+  const { s3, bucket } = r2Client();
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+      CacheControl: "public, max-age=31536000, immutable",
+      IfNoneMatch: "*",
+    }),
+  );
+}
+
+/** Roll back a create-only owner-restore object after a later failure. */
+export async function deleteStoredObject(key: string): Promise<void> {
+  const { s3, bucket } = r2Client();
+  await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
 
 export function decodeDataUrl(dataUrl: string): {

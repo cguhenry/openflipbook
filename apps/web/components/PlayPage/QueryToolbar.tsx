@@ -6,6 +6,7 @@ import type { Autonomy, ImageTier } from "@openflipbook/config";
 import { SUPPORTED_LOCALES, type SupportedLocale, type LocaleStrings } from "@/lib/i18n";
 import { THEMES, type Theme } from "@/hooks/usePersistedTheme";
 import type { LoopKnobs } from "@/hooks/useSpeedPreset";
+import { PRODUCT_FLAGS } from "@/lib/product-flags";
 import { SpeedPreset } from "./SpeedPreset";
 
 const TIERS: readonly ImageTier[] = ["fast", "balanced", "pro"] as const;
@@ -35,6 +36,7 @@ interface Props {
   setAutonomy: (a: Autonomy) => void;
   domLabels: boolean;
   setDomLabels: (on: boolean) => void;
+  nasSlim?: boolean;
 }
 
 export function QueryToolbar({
@@ -62,16 +64,17 @@ export function QueryToolbar({
   setAutonomy,
   domLabels,
   setDomLabels,
+  nasSlim = PRODUCT_FLAGS.nasSlim,
 }: Props) {
   return (
     <>
       <form
         onSubmit={onSubmit}
-        className="flex flex-wrap items-center gap-2 rounded-full border border-[var(--color-edge)] bg-[var(--color-canvas)]/80 px-4 py-2 shadow-sm"
+        className="flex w-full flex-wrap items-center gap-2 rounded-2xl border border-[var(--color-edge)] bg-[var(--color-canvas)]/80 p-2 shadow-sm sm:rounded-full sm:px-4"
       >
         <input
           autoFocus
-          className="min-w-[8rem] flex-1 bg-transparent outline-none placeholder:opacity-60"
+          className="min-h-11 min-w-0 basis-full bg-transparent px-2 outline-none placeholder:opacity-60 sm:min-h-0 sm:basis-auto"
           placeholder={t.placeholder}
           value={input}
           onChange={(e) => onInputChange(e.target.value)}
@@ -80,12 +83,12 @@ export function QueryToolbar({
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={busy}
-          className="rounded-full border border-[var(--color-edge)] px-3 py-1 text-xs hover:bg-[var(--color-ink)]/5 disabled:opacity-40"
+          className="min-h-11 rounded-full border border-[var(--color-edge)] px-4 text-xs hover:bg-[var(--color-ink)]/5 disabled:opacity-40 sm:min-h-0 sm:px-3 sm:py-1"
           title="Upload an image as the starting page. Tap on it to explore regions."
         >
           {t.upload}
         </button>
-        <select
+        {!nasSlim && <select
           value={outputLocale}
           onChange={(e) => setOutputLocale(e.target.value as SupportedLocale)}
           disabled={busy}
@@ -98,8 +101,8 @@ export function QueryToolbar({
               {loc === "auto" ? t.langAuto : loc}
             </option>
           ))}
-        </select>
-        <div
+        </select>}
+        {!nasSlim && <div
           role="group"
           aria-label="Theme"
           className="flex items-center overflow-hidden rounded-full border border-[var(--color-edge)] text-xs"
@@ -125,8 +128,8 @@ export function QueryToolbar({
                   : t.themeDark}
             </button>
           ))}
-        </div>
-        <div
+        </div>}
+        {!nasSlim && <div
           role="group"
           aria-label="Image quality tier"
           className="flex items-center overflow-hidden rounded-full border border-[var(--color-edge)] text-xs"
@@ -150,8 +153,8 @@ export function QueryToolbar({
               {tier}
             </button>
           ))}
-        </div>
-        <SpeedPreset
+        </div>}
+        {!nasSlim && <SpeedPreset
           busy={busy}
           imageTier={imageTier}
           setImageTier={setImageTier}
@@ -160,8 +163,8 @@ export function QueryToolbar({
           sessionSpend={sessionSpend}
           devModel={devModel}
           setDevModel={setDevModel}
-        />
-        <div
+        />}
+        {!nasSlim && <div
           role="group"
           aria-label="World Mode"
           className="flex items-center overflow-hidden rounded-full border border-[var(--color-edge)] text-xs"
@@ -218,11 +221,11 @@ export function QueryToolbar({
               labels
             </button>
           )}
-        </div>
+        </div>}
         <button
           type="submit"
           disabled={busy || input.trim().length === 0}
-          className="rounded-full bg-[var(--color-ink)] px-4 py-1 text-[var(--color-canvas)] disabled:opacity-40"
+          className="min-h-11 flex-1 rounded-full bg-[var(--color-ink)] px-4 text-[var(--color-canvas)] disabled:opacity-40 sm:min-h-0 sm:flex-none sm:py-1"
         >
           {busy ? t.generating : t.go}
         </button>

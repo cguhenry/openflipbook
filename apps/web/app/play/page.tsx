@@ -67,11 +67,13 @@ import {
 } from "@/lib/world-mode";
 import { usePersistedLocale } from "@/hooks/usePersistedLocale";
 import { usePersistedTheme } from "@/hooks/usePersistedTheme";
+import { useReducedMotionPreference } from "@/hooks/useReducedMotionPreference";
 import { useStyleAnchor } from "@/hooks/useStyleAnchor";
 import { useWorldMode } from "@/hooks/useWorldMode";
 import { useStyleGalleryDismissed } from "@/hooks/useStyleGalleryDismissed";
 import { useTraceEmitter } from "@/hooks/useTraceEmitter";
 import { QueryToolbar } from "@/components/PlayPage/QueryToolbar";
+import { NasSettingsRuntime } from "@/components/PlayPage/NasSettingsRuntime";
 import { StyleGallery } from "@/components/PlayPage/StyleGallery";
 import { FirstRunCoach } from "@/components/PlayPage/FirstRunCoach";
 import { TapHint } from "@/components/PlayPage/TapHint";
@@ -151,7 +153,7 @@ import { useImageMorph } from "@/hooks/useImageMorph";
 import { PRODUCT_FLAGS } from "@/lib/product-flags";
 import PageContractOverlay from "@/components/PlayPage/PageContractOverlay";
 import { deterministicTapPrefetch, resolveHotspot } from "@/lib/hotspot-resolver";
-import { runPageViewTransition } from "@/lib/page-transition";
+import { reducedMotion, runPageViewTransition } from "@/lib/page-transition";
 import {
   createGeneration,
   stopGeneration,
@@ -817,10 +819,19 @@ export default function PlayPage() {
   const shared = useSharedSession(sessionId, knownNodeIds);
   // The speed preset's wire half — spread into every generate() body next to
   // image_tier. Balanced knobs produce {} (byte-identity with today).
-  const loopWire = useMemo(() => wireFields(loopKnobs), [loopKnobs]);
+  const loopWire = useMemo(
+    () => (PRODUCT_FLAGS.nasSlim ? {} : wireFields(loopKnobs)),
+    [loopKnobs],
+  );
+  const requestImageTier = PRODUCT_FLAGS.nasSlim ? "balanced" : imageTier;
   const [videoTier, setVideoTier] = useVideoTier();
   const [outputLocale, setOutputLocale] = usePersistedLocale();
   const [theme, setTheme] = usePersistedTheme();
+  const [motionPreference, setMotionPreference] = useReducedMotionPreference();
+  const forceReducedMotionRef = useRef(motionPreference === "reduce");
+  useEffect(() => {
+    forceReducedMotionRef.current = motionPreference === "reduce";
+  }, [motionPreference]);
   const t = getStrings(outputLocale);
 
   const [editMode, setEditMode] = useState(false);
@@ -1397,7 +1408,7 @@ export default function PlayPage() {
       image: page.imageDataUrl,
       parent_query: page.query,
       parent_title: page.title,
-      image_tier: imageTier,
+      image_tier: requestImageTier,
       ...loopWire,
       ...(devModel ? { image_model: devModel } : {}),
       output_locale: resolveOutputLocale(outputLocale),
@@ -1417,7 +1428,7 @@ export default function PlayPage() {
     phase,
     bloom,
     startBloom,
-    imageTier,
+    requestImageTier,
     loopWire,
     devModel,
     outputLocale,
@@ -1585,7 +1596,7 @@ export default function PlayPage() {
         session_id: sessionId,
         current_node_id: page?.nodeId ?? "",
         mode: "query",
-        image_tier: imageTier,
+        image_tier: requestImageTier,
         ...loopWire,
         ...(devModel ? { image_model: devModel } : {}),
         output_locale: resolveOutputLocale(outputLocale),
@@ -1594,7 +1605,7 @@ export default function PlayPage() {
         ...(worldEnabled && worldDomLabels ? { suppress_map_labels: true } : {}),
       });
     },
-    [input, sessionId, page, generate, imageTier, loopWire, devModel, outputLocale, styleAnchor, worldEnabled, worldDomLabels]
+    [input, sessionId, page, generate, requestImageTier, loopWire, devModel, outputLocale, styleAnchor, worldEnabled, worldDomLabels]
   );
 
   // B1 — "Describe a place": turn the input description into a logical object
@@ -1687,7 +1698,7 @@ export default function PlayPage() {
         session_id: sessionId,
         current_node_id: page?.nodeId ?? "",
         mode: "query",
-        image_tier: imageTier,
+        image_tier: requestImageTier,
         ...loopWire,
         ...(devModel ? { image_model: devModel } : {}),
         output_locale: resolveOutputLocale(outputLocale),
@@ -1723,7 +1734,7 @@ export default function PlayPage() {
     sessionId,
     page,
     generate,
-    imageTier,
+    requestImageTier,
     loopWire,
     devModel,
     outputLocale,
@@ -1780,7 +1791,7 @@ export default function PlayPage() {
         edit_instruction: instruction,
         parent_query: page.query,
         parent_title: page.title,
-        image_tier: imageTier,
+        image_tier: requestImageTier,
         ...loopWire,
         ...(devModel ? { image_model: devModel } : {}),
         output_locale: resolveOutputLocale(outputLocale),
@@ -1797,7 +1808,7 @@ export default function PlayPage() {
       setEditMode(false);
       setEditRegion(null);
     },
-    [page, generate, imageTier, loopWire, devModel, outputLocale, styleAnchor, history]
+    [page, generate, requestImageTier, loopWire, devModel, outputLocale, styleAnchor, history]
   );
 
   const submitEdit = useCallback(
@@ -1900,7 +1911,7 @@ export default function PlayPage() {
           dispatchTapAt(bbox.x_pct + bbox.w_pct / 2, bbox.y_pct + bbox.h_pct / 2);
         },
       });
-      if (EDIT_REGION_ENABLED) {
+      if (!PRODUCT_FLAGS.nasSlim && EDIT_REGION_ENABLED) {
         items.push({
           label: `Fix / redraw ${entity.name}`,
           onClick: () => {
@@ -1924,7 +1935,11 @@ export default function PlayPage() {
           },
         });
       }
-      if (geoMap.entities.length > 0 && worldState.overrideEnabled) {
+      if (
+        !PRODUCT_FLAGS.nasSlim &&
+        geoMap.entities.length > 0 &&
+        worldState.overrideEnabled
+      ) {
         items.push({
           label: `Move / resize ${entity.name}…`,
           onClick: () => {
@@ -1934,7 +1949,11 @@ export default function PlayPage() {
           },
         });
       }
-    } else if (contextMenu.clickPct && EDIT_REGION_ENABLED) {
+    } else if (
+      !PRODUCT_FLAGS.nasSlim &&
+      contextMenu.clickPct &&
+      EDIT_REGION_ENABLED
+    ) {
       // Fill paints the whole mask, so the default region IS the default
       // object size — keep it modest (the palace-sized ferry lesson).
       const region = cropBox(
@@ -1965,7 +1984,7 @@ export default function PlayPage() {
     // Taps ENTER places in world mode, so "closer, not inside" needs its own
     // affordance. Not entity-gated: any point on the image content zooms
     // (clickPct is null only on the letterbox, where "here" means nothing).
-    if (contextMenu.clickPct) {
+    if (!PRODUCT_FLAGS.nasSlim && contextMenu.clickPct) {
       const { x_pct, y_pct } = contextMenu.clickPct;
       items.push({
         label: "🔍 Zoom in here",
@@ -2016,40 +2035,42 @@ export default function PlayPage() {
           },
         });
       }
-      const publishSessionId = page.sessionId;
-      items.push({
-        label: "Publish session to gallery",
-        onClick: () => {
-          close();
-          void fetch("/api/gallery/publish", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              session_id: publishSessionId,
-              node_id: exportId,
-            }),
-          }).then(async (r) => {
-            if (r.ok) {
-              window.open("/gallery", "_blank");
-            } else {
-              const j = (await r.json().catch(() => null)) as {
-                error?: string;
-              } | null;
-              window.alert(j?.error ?? "publish failed");
-            }
-          });
-        },
-      });
-      items.push({
-        label: "Unpublish session",
-        onClick: () => {
-          close();
-          void fetch(
-            `/api/gallery/publish?session_id=${encodeURIComponent(publishSessionId)}`,
-            { method: "DELETE" },
-          );
-        },
-      });
+      if (!PRODUCT_FLAGS.nasSlim) {
+        const publishSessionId = page.sessionId;
+        items.push({
+          label: "Publish session to gallery",
+          onClick: () => {
+            close();
+            void fetch("/api/gallery/publish", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                session_id: publishSessionId,
+                node_id: exportId,
+              }),
+            }).then(async (r) => {
+              if (r.ok) {
+                window.open("/gallery", "_blank");
+              } else {
+                const j = (await r.json().catch(() => null)) as {
+                  error?: string;
+                } | null;
+                window.alert(j?.error ?? "publish failed");
+              }
+            });
+          },
+        });
+        items.push({
+          label: "Unpublish session",
+          onClick: () => {
+            close();
+            void fetch(
+              `/api/gallery/publish?session_id=${encodeURIComponent(publishSessionId)}`,
+              { method: "DELETE" },
+            );
+          },
+        });
+      }
     }
     return items;
   }, [contextMenu, phase, page, dispatchTapAt, runEdit, geoMap.entities.length, mutateWorldEntity]);
@@ -2072,8 +2093,15 @@ export default function PlayPage() {
     const target = prev.items.find((p) => p.nodeId === id);
     if (!target) return prev;
     const applyTarget = () => setPage(target);
-    if (PRODUCT_FLAGS.html5Transitions) runPageViewTransition(applyTarget);
-    else applyTarget();
+    if (PRODUCT_FLAGS.html5Transitions) {
+      runPageViewTransition(
+        applyTarget,
+        {},
+        document,
+        window,
+        forceReducedMotionRef.current,
+      );
+    } else applyTarget();
     setPhase("ready");
     setError(null);
     setStatusMsg(null);
@@ -2109,8 +2137,15 @@ export default function PlayPage() {
       const target = prev.items.find((p) => p.nodeId === nodeId);
       if (!target) return prev;
       const applyTarget = () => setPage(target);
-      if (PRODUCT_FLAGS.html5Transitions) runPageViewTransition(applyTarget);
-      else applyTarget();
+      if (PRODUCT_FLAGS.html5Transitions) {
+        runPageViewTransition(
+          applyTarget,
+          {},
+          document,
+          window,
+          forceReducedMotionRef.current,
+        );
+      } else applyTarget();
       setPhase("ready");
       setError(null);
       setStatusMsg(null);
@@ -2208,8 +2243,12 @@ export default function PlayPage() {
     onToggleScrubber: () => setScrubberOpen((s) => !s),
     onOpenQuickbar: () => setQuickbarOpen(true),
     onToggleHelp: () => setHelpOpen((h) => !h),
-    onToggleCodex: () => setCodexOpen((c) => !c),
-    onToggleGeoOverlay: () => setGeoOverlayOn((g) => !g),
+    onToggleCodex: () => {
+      if (!PRODUCT_FLAGS.nasSlim) setCodexOpen((c) => !c);
+    },
+    onToggleGeoOverlay: () => {
+      if (!PRODUCT_FLAGS.nasSlim) setGeoOverlayOn((g) => !g);
+    },
     onExpandOutward: triggerExpand,
     onCloseOverlays: () => {
       setHelpOpen(false);
@@ -2702,9 +2741,7 @@ export default function PlayPage() {
       const px = evt.clientX - rect.left;
       const py = evt.clientY - rect.top;
       setClickRipple({ xPx: px, yPx: py, key: Date.now() });
-      const reduceMotion =
-        typeof window !== "undefined" &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const reduceMotion = reducedMotion(window, forceReducedMotionRef.current);
       // The prefetch verdict is needed BEFORE the morph starts: it decides both
       // the blank-tap rejection below and whether the wait-phase may DIVE (only
       // a tap that is KNOWN to zoom-continue earns the push-in — anything else
@@ -2980,7 +3017,7 @@ export default function PlayPage() {
         parent_title: page.title,
         click,
         source_hotspot_id: sourceHotspotId,
-        image_tier: imageTier,
+        image_tier: requestImageTier,
         ...loopWire,
         ...(devModel ? { image_model: devModel } : {}),
         output_locale: resolveOutputLocale(outputLocale),
@@ -3344,9 +3381,7 @@ export default function PlayPage() {
       const px = click.x_pct * rect2.width;
       const py = click.y_pct * rect2.height;
       setClickRipple({ xPx: px, yPx: py, key: Date.now() });
-      const reduceMotion =
-        typeof window !== "undefined" &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const reduceMotion = reducedMotion(window, forceReducedMotionRef.current);
       setMorphFx({
         ox: px,
         oy: py,
@@ -3395,7 +3430,7 @@ export default function PlayPage() {
         parent_title: page.title,
         click,
         click_hint: strokeHint,
-        image_tier: imageTier,
+        image_tier: requestImageTier,
         ...loopWire,
         ...(devModel ? { image_model: devModel } : {}),
         output_locale: resolveOutputLocale(outputLocale),
@@ -3439,7 +3474,7 @@ export default function PlayPage() {
       inflight.clear();
       prefetchCurrentKeyRef.current = null;
     };
-  }, [page, phase, generate, imageTier, loopWire, devModel, editMode, outputLocale, bucketKey, streamStatus, styleAnchor, promptForHint, worldEnabled, worldAutonomy, history, selectFromMap]);
+  }, [page, phase, generate, requestImageTier, loopWire, devModel, editMode, outputLocale, bucketKey, streamStatus, styleAnchor, promptForHint, worldEnabled, worldAutonomy, history, selectFromMap]);
 
   // When the page changes, tear down any running stream.
   useEffect(() => {
@@ -3464,13 +3499,13 @@ export default function PlayPage() {
       session_id: sessionId,
       current_node_id: "",
       mode: "query",
-      image_tier: imageTier,
+      image_tier: requestImageTier,
       ...loopWire,
       ...(devModel ? { image_model: devModel } : {}),
       output_locale: resolveOutputLocale(outputLocale),
       ...(styleAnchor ? { session_style_anchor: styleAnchor.style } : {}),
     });
-  }, [generate, sessionId, imageTier, loopWire, devModel, outputLocale, styleAnchor]);
+  }, [generate, sessionId, requestImageTier, loopWire, devModel, outputLocale, styleAnchor]);
 
   const animateAbortRef = useRef<AbortController | null>(null);
   const disconnectStream = useCallback(() => {
@@ -3603,7 +3638,7 @@ export default function PlayPage() {
 
   return (
     <main
-      className="relative mx-auto flex min-h-dvh max-w-5xl flex-col gap-4 px-4 py-6"
+      className="relative mx-auto flex min-h-dvh max-w-5xl flex-col gap-4 px-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:px-4 sm:py-6"
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
@@ -3635,7 +3670,7 @@ export default function PlayPage() {
         setDomLabels={setWorldDomLabels}
       />
 
-      <div className="-mt-2 flex justify-end gap-2">
+      <div className="-mt-2 flex flex-wrap justify-end gap-2">
         <SessionHistory
           currentSessionId={sessionId}
           onNewSession={startNewSession}
@@ -3643,12 +3678,24 @@ export default function PlayPage() {
             window.location.assign(`/play?continue=${encodeURIComponent(id)}`);
           }}
         />
+        {PRODUCT_FLAGS.nasSlim && (
+          <NasSettingsRuntime
+            outputLocale={outputLocale}
+            setOutputLocale={setOutputLocale}
+            theme={theme}
+            setTheme={setTheme}
+            motionPreference={motionPreference}
+            setMotionPreference={setMotionPreference}
+            currentSessionId={sessionId}
+            canExportOffline={Boolean(page?.nodeId)}
+          />
+        )}
         {/* Always-on gallery entrance: the published-worlds feed at /gallery
             was only reachable AFTER you publish (window.open on success), so a
             first-time visitor could never discover other people's worlds — the
             reach loop (explore others → make your own → share) had no front
             door. Opens in a new tab so an in-progress session isn't lost. */}
-        <a
+        {!PRODUCT_FLAGS.nasSlim && <a
           href="/gallery"
           target="_blank"
           rel="noopener noreferrer"
@@ -3656,7 +3703,7 @@ export default function PlayPage() {
           className="rounded-full border border-[var(--color-ink)]/25 bg-[var(--color-paper)]/70 px-3 py-1 text-xs font-medium text-[var(--color-ink)]/80 transition hover:bg-[var(--color-ink)]/10"
         >
           🖼️ Gallery
-        </a>
+        </a>}
         {worldEnabled && (
           <button
             type="button"
@@ -3719,13 +3766,13 @@ export default function PlayPage() {
               )}
             </div>
           )}
-          <div className="flex items-center justify-between gap-3 text-xs opacity-80">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs opacity-80">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={goBack}
               disabled={!canGoBack}
-              className="rounded-full border border-[var(--color-ink)]/40 px-3 py-1 hover:bg-[var(--color-ink)]/5 disabled:opacity-30"
+              className="min-h-11 rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 disabled:opacity-30 sm:min-h-0 sm:py-1"
               title="Go back (←)"
             >
               ← back
@@ -3734,7 +3781,7 @@ export default function PlayPage() {
               type="button"
               onClick={goForward}
               disabled={!canGoForward}
-              className="rounded-full border border-[var(--color-ink)]/40 px-3 py-1 hover:bg-[var(--color-ink)]/5 disabled:opacity-30"
+              className="min-h-11 rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 disabled:opacity-30 sm:min-h-0 sm:py-1"
               title="Go forward (→)"
             >
               forward →
@@ -3742,7 +3789,7 @@ export default function PlayPage() {
             <button
               type="button"
               onClick={() => setViewMode((m) => (m === "map" ? "page" : "map"))}
-              className="rounded-full border border-[var(--color-ink)]/40 px-3 py-1 hover:bg-[var(--color-ink)]/5"
+              className="min-h-11 rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 sm:min-h-0 sm:py-1"
               title="Toggle world map (M)"
             >
               {viewMode === "map" ? "📄 page" : "🗺 map"}
@@ -3751,7 +3798,7 @@ export default function PlayPage() {
               href={`/atlas/${encodeURIComponent(sessionId)}`}
               target="_blank"
               rel="noreferrer"
-              className="rounded-full border border-[var(--color-ink)]/40 px-3 py-1 hover:bg-[var(--color-ink)]/5"
+              className="flex min-h-11 items-center rounded-full border border-[var(--color-ink)]/40 px-3 hover:bg-[var(--color-ink)]/5 sm:min-h-0 sm:py-1"
               title="Open this session's atlas in a new tab"
             >
               ↗ atlas
@@ -4263,56 +4310,64 @@ export default function PlayPage() {
                 <BloomGlyph className="h-3.5 w-3.5" />
                 Around
               </button>
-              <button
-                type="button"
-                onClick={() => setGeoOverlayOn((v) => !v)}
-                aria-pressed={geoOverlayOn}
-                disabled={!page?.nodeId}
-                className={
-                  "rounded-full px-3 py-1 text-xs text-white disabled:opacity-50 " +
-                  (geoOverlayOn ? "bg-emerald-600" : "bg-slate-600/85 hover:bg-slate-600")
-                }
-                title="Geometry layer (G) — draw each entity's detected coordinate box on the image"
-              >
-                ⊞ geo
-              </button>
-              <button
-                type="button"
-                onClick={() => setCodexOpen((c) => !c)}
-                aria-pressed={codexOpen}
-                className={
-                  "rounded-full px-3 py-1 text-xs text-white " +
-                  (codexOpen
-                    ? "bg-[var(--color-ink)]"
-                    : "bg-black/60 hover:bg-black/75")
-                }
-                title="Open the world codex (K). Lists every character, place, and item the explorer has seen."
-              >
-                Codex
-                {worldState.entities.length > 0 && (
-                  <span className="ml-1.5 rounded-full bg-white/15 px-1.5 text-[10px] tabular-nums">
-                    {worldState.entities.length}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditMode((v) => !v);
-                  setEditInstruction("");
-                  setEditRegion(null);
-                  setEditDragRect(null);
-                }}
-                disabled={phase === "generating"}
-                aria-pressed={editMode}
-                className={
-                  "rounded-full px-3 py-1 text-xs text-white disabled:opacity-50 " +
-                  (editMode ? "bg-amber-600" : "bg-black/60 hover:bg-black/75")
-                }
-                title="Edit this image with a text instruction"
-              >
-                {editMode ? t.cancelEdit : t.edit}
-              </button>
+              {!PRODUCT_FLAGS.nasSlim && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setGeoOverlayOn((v) => !v)}
+                    aria-pressed={geoOverlayOn}
+                    disabled={!page?.nodeId}
+                    className={
+                      "rounded-full px-3 py-1 text-xs text-white disabled:opacity-50 " +
+                      (geoOverlayOn
+                        ? "bg-emerald-600"
+                        : "bg-slate-600/85 hover:bg-slate-600")
+                    }
+                    title="Geometry layer (G) — draw each entity's detected coordinate box on the image"
+                  >
+                    ⊞ geo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCodexOpen((c) => !c)}
+                    aria-pressed={codexOpen}
+                    className={
+                      "rounded-full px-3 py-1 text-xs text-white " +
+                      (codexOpen
+                        ? "bg-[var(--color-ink)]"
+                        : "bg-black/60 hover:bg-black/75")
+                    }
+                    title="Open the world codex (K). Lists every character, place, and item the explorer has seen."
+                  >
+                    Codex
+                    {worldState.entities.length > 0 && (
+                      <span className="ml-1.5 rounded-full bg-white/15 px-1.5 text-[10px] tabular-nums">
+                        {worldState.entities.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditMode((v) => !v);
+                      setEditInstruction("");
+                      setEditRegion(null);
+                      setEditDragRect(null);
+                    }}
+                    disabled={phase === "generating"}
+                    aria-pressed={editMode}
+                    className={
+                      "rounded-full px-3 py-1 text-xs text-white disabled:opacity-50 " +
+                      (editMode
+                        ? "bg-amber-600"
+                        : "bg-black/60 hover:bg-black/75")
+                    }
+                    title="Edit this image with a text instruction"
+                  >
+                    {editMode ? t.cancelEdit : t.edit}
+                  </button>
+                </>
+              )}
               {PRODUCT_FLAGS.video &&
                 !process.env.NEXT_PUBLIC_LTX_WS_URL &&
                 streamStatus === "off" && (

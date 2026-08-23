@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface SessionSummary {
   session_id: string;
@@ -25,6 +25,7 @@ export default function SessionHistory({
   const [open, setOpen] = useState(false);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -45,6 +46,16 @@ export default function SessionHistory({
     return () => controller.abort();
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
   return (
     <div className="relative">
       <button
@@ -52,7 +63,7 @@ export default function SessionHistory({
         aria-expanded={open}
         aria-controls="session-history-panel"
         onClick={() => setOpen((value) => !value)}
-        className="rounded-full border border-[var(--color-ink)]/25 bg-[var(--color-paper)]/70 px-3 py-1 text-xs font-medium hover:bg-[var(--color-ink)]/10"
+        className="min-h-11 rounded-full border border-[var(--color-ink)]/25 bg-[var(--color-paper)]/70 px-3 text-xs font-medium hover:bg-[var(--color-ink)]/10 sm:min-h-0 sm:py-1"
       >
         History
       </button>
@@ -60,20 +71,35 @@ export default function SessionHistory({
         <div
           id="session-history-panel"
           role="dialog"
+          aria-modal="true"
           aria-label="Session history"
-          className="absolute right-0 top-9 z-40 w-[min(23rem,calc(100vw-2rem))] rounded-xl border border-[var(--color-ink)]/20 bg-[var(--color-paper)] p-3 text-[var(--color-ink)] shadow-xl"
+          className="fixed inset-x-3 bottom-[max(.75rem,env(safe-area-inset-bottom))] top-[max(4.5rem,env(safe-area-inset-top))] z-40 overflow-y-auto rounded-xl border border-[var(--color-ink)]/20 bg-[var(--color-paper)] p-3 text-[var(--color-ink)] shadow-xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:right-0 sm:top-9 sm:w-[min(23rem,calc(100vw-2rem))] sm:overflow-visible"
         >
           <div className="flex items-center justify-between gap-3">
             <span className="text-xs font-semibold uppercase tracking-wide opacity-65">
               Recent sessions
             </span>
-            <button
-              type="button"
-              onClick={onNewSession}
-              className="rounded-full bg-[var(--color-ink)] px-2.5 py-1 text-[11px] text-[var(--color-canvas)]"
-            >
-              New session
-            </button>
+            <span className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onNewSession();
+                }}
+                className="min-h-11 rounded-full bg-[var(--color-ink)] px-3 text-[11px] text-[var(--color-canvas)] sm:min-h-0 sm:py-1"
+              >
+                New session
+              </button>
+              <button
+                ref={closeRef}
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Close history"
+                className="min-h-11 min-w-11 rounded-full border border-[var(--color-edge)] text-lg sm:min-h-8 sm:min-w-8"
+              >
+                ×
+              </button>
+            </span>
           </div>
           {loading ? (
             <p className="mt-3 text-xs opacity-60">Loading…</p>
@@ -89,7 +115,7 @@ export default function SessionHistory({
                       type="button"
                       aria-current={current ? "page" : undefined}
                       onClick={() => onResume(session.session_id)}
-                      className="flex w-full items-start justify-between gap-3 rounded-lg border border-transparent px-2.5 py-2 text-left hover:border-[var(--color-ink)]/20 hover:bg-[var(--color-ink)]/5"
+                      className="flex min-h-11 w-full items-start justify-between gap-3 rounded-lg border border-transparent px-2.5 py-2 text-left hover:border-[var(--color-ink)]/20 hover:bg-[var(--color-ink)]/5"
                     >
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-medium">

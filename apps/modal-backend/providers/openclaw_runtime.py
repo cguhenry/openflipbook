@@ -24,16 +24,18 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
 from _env import env_flag
 from contracts.image_seed_contract import normalize_image_seed_envelope
+from providers import breaker, usage
 from providers.openclaw_contract import (
     OPENCLAW_RESPONSES_ALIGNMENT_INVALID,
     OPENCLAW_RESPONSES_JSON_SCHEMA_INVALID,
     OPENCLAW_RESPONSES_PAGEPLAN_INVALID,
+    OPENCLAW_RESPONSES_STATUS_ERROR,
     AlignedBox,
     OpenClawContractError,
     classify_response_failure,
@@ -60,6 +62,23 @@ _MEDIA_PATH_RE = re.compile(
 class OpenClawGatewayError(RuntimeError):
     """Raised for an authenticated Gateway or contract failure."""
 
+    def __init__(self, message: str, *, transient: bool = False) -> None:
+        self.transient = transient
+        super().__init__(message)
+
+
+class OpenClawCircuitOpenError(OpenClawGatewayError):
+    """Stable fail-before-dispatch signal for a cooling OpenClaw stage."""
+
+    code = "OPENCLAW_CIRCUIT_OPEN"
+
+    def __init__(self, stage: str, retry_after_seconds: int) -> None:
+        self.stage = stage
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(
+            f"{self.code}: {stage} unavailable; retry after {retry_after_seconds}s"
+        )
+
 
 @dataclass(frozen=True)
 class OpenClawImage:
@@ -70,6 +89,34 @@ class OpenClawImage:
 
 _GATEWAY_SEMAPHORE: asyncio.Semaphore | None = None
 _GATEWAY_SEMAPHORE_LIMIT: int | None = None
+_BREAKER_KEYS = {
+    "responses": "openclaw:responses",
+    "image": "openclaw:image",
+}
+
+
+def breaker_snapshot() -> dict[str, dict[str, int | float | str]]:
+    return {stage: breaker.snapshot(key) for stage, key in _BREAKER_KEYS.items()}
+
+
+def _before_stage(stage: str) -> str:
+    key = _BREAKER_KEYS[stage]
+    state = breaker.snapshot(key)
+    if state["state"] == "open":
+        raise OpenClawCircuitOpenError(stage, int(state["retry_after_seconds"]))
+    return key
+
+
+def _record_stage_failure(key: str, exc: OpenClawGatewayError) -> None:
+    if exc.transient:
+        breaker.record_failure(key)
+
+
+def _http_failure(message: str, exc: httpx.HTTPError) -> OpenClawGatewayError:
+    status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+    transient = isinstance(exc, httpx.RequestError) or status == 429 or bool(status and status >= 500)
+    suffix = f" (HTTP {status})" if status is not None else ""
+    return OpenClawGatewayError(message + suffix, transient=transient)
 
 
 def enabled() -> bool:
@@ -208,7 +255,8 @@ def _format_response_contract_failure(
     safe["code"] = code
     return OpenClawGatewayError(
         f"{message} [{code}] "
-        + json.dumps(safe, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + json.dumps(safe, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+        transient=code == OPENCLAW_RESPONSES_STATUS_ERROR,
     )
 
 
@@ -327,15 +375,22 @@ class OpenClawGatewayClient:
         *,
         json_body: dict[str, Any] | None = None,
         params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+        stage: Literal["responses", "image"] | None = None,
+        usage_kind: usage.ProviderCall | None = None,
         timeout: float,
     ) -> httpx.Response:
         async with _semaphore():
-            headers = _headers()
+            if stage is not None:
+                _before_stage(stage)
+            request_headers = headers if headers is not None else _headers()
+            if usage_kind is not None:
+                usage.record_provider_call(usage_kind)
             if self._http_client is not None:
                 return await self._http_client.request(
                     method,
                     f"{base_url()}{path}",
-                    headers=headers,
+                    headers=request_headers,
                     json=json_body,
                     params=params,
                     timeout=timeout,
@@ -344,7 +399,7 @@ class OpenClawGatewayClient:
                 return await client.request(
                     method,
                     f"{base_url()}{path}",
-                    headers=headers,
+                    headers=request_headers,
                     json=json_body,
                     params=params,
                     timeout=timeout,
@@ -356,18 +411,33 @@ class OpenClawGatewayClient:
         path: str,
         *,
         json_body: dict[str, Any],
+        headers: dict[str, str] | None = None,
+        stage: Literal["responses", "image"] | None = None,
+        usage_kind: usage.ProviderCall | None = None,
         timeout: float,
     ) -> dict[str, Any]:
         try:
-            response = await self._request(method, path, json_body=json_body, timeout=timeout)
+            response = await self._request(
+                method,
+                path,
+                json_body=json_body,
+                headers=headers,
+                stage=stage,
+                usage_kind=usage_kind,
+                timeout=timeout,
+            )
             response.raise_for_status()
             payload = response.json()
         except httpx.HTTPError as exc:
-            raise OpenClawGatewayError("OpenClaw Gateway HTTP request failed") from exc
+            raise _http_failure("OpenClaw Gateway HTTP request failed", exc) from exc
         except ValueError as exc:
-            raise OpenClawGatewayError("OpenClaw Gateway returned invalid JSON") from exc
+            raise OpenClawGatewayError(
+                "OpenClaw Gateway returned invalid JSON", transient=True
+            ) from exc
         if not isinstance(payload, dict):
-            raise OpenClawGatewayError("OpenClaw Gateway returned a non-object JSON payload")
+            raise OpenClawGatewayError(
+                "OpenClaw Gateway returned a non-object JSON payload", transient=True
+            )
         return payload
 
     async def responses_json(
@@ -377,35 +447,47 @@ class OpenClawGatewayClient:
         *,
         image_data_url: str | None = None,
         max_output_tokens: int = 1800,
+        usage_kind: usage.ProviderCall = "planner",
     ) -> dict[str, Any]:
         user_content: list[dict[str, Any]] = [
             {"type": "input_text", "text": user_prompt},
         ]
         if image_data_url is not None:
             user_content.append(_image_input(image_data_url))
-        payload = await self._json_request(
-            "POST",
-            "/v1/responses",
-            json_body={
-                "model": gateway_model(),
-                "input": [
-                    _message("system", system_prompt),
-                    {
-                        "type": "message",
-                        "role": "user",
-                        "content": user_content,
-                    },
-                ],
-                "tool_choice": "none",
-                "max_output_tokens": max_output_tokens,
-                "temperature": 0,
-            },
-            timeout=request_timeout_s(),
-        )
-        # Retain only the safe summary for the immediate contract validator;
-        # the raw Responses envelope remains local to this call.
-        self._last_response_diagnostics = safe_response_diagnostics(payload)
-        return _response_text(payload)
+        key = _BREAKER_KEYS["responses"]
+        try:
+            payload = await self._json_request(
+                "POST",
+                "/v1/responses",
+                json_body={
+                    "model": gateway_model(),
+                    "input": [
+                        _message("system", system_prompt),
+                        {
+                            "type": "message",
+                            "role": "user",
+                            "content": user_content,
+                        },
+                    ],
+                    "tool_choice": "none",
+                    "max_output_tokens": max_output_tokens,
+                    "temperature": 0,
+                },
+                stage="responses",
+                usage_kind=usage_kind,
+                timeout=request_timeout_s(),
+            )
+            # Retain only the safe summary for the immediate contract validator;
+            # the raw Responses envelope remains local to this call.
+            self._last_response_diagnostics = safe_response_diagnostics(payload)
+            result = _response_text(payload)
+        except asyncio.CancelledError:
+            raise
+        except OpenClawGatewayError as exc:
+            _record_stage_failure(key, exc)
+            raise
+        breaker.record_success(key)
+        return result
 
     async def authenticated_health(self) -> dict[str, Any]:
         """Non-generating authenticated Gateway preflight."""
@@ -416,7 +498,9 @@ class OpenClawGatewayClient:
             )
             response.raise_for_status()
             payload = response.json()
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPError as exc:
+            raise _http_failure("OpenClaw Gateway health preflight failed", exc) from exc
+        except ValueError as exc:
             raise OpenClawGatewayError("OpenClaw Gateway health preflight failed") from exc
         if not isinstance(payload, dict):
             raise OpenClawGatewayError("OpenClaw Gateway health payload was not an object")
@@ -572,6 +656,7 @@ class OpenClawGatewayClient:
                 user,
                 image_data_url=image_data_url,
                 max_output_tokens=900,
+                usage_kind="alignment",
             )
             return validate_alignment_minimal(raw, expected_ids)
         except OpenClawContractError as exc:
@@ -591,34 +676,51 @@ class OpenClawGatewayClient:
     ) -> OpenClawImage:
         if is_cancelled is not None and is_cancelled():
             raise asyncio.CancelledError()
-        payload = await self._json_request(
-            "POST",
-            "/tools/invoke",
-            json_body={
-                "tool": "image_generate",
-                "agentId": agent_id(),
-                "args": {
-                    "prompt": prompt,
-                    "model": image_model(),
-                    "size": DEFAULT_IMAGE_SIZE,
-                    "quality": "low",
-                    "background": "opaque",
-                    "count": 1,
+        key = _BREAKER_KEYS["image"]
+        try:
+            payload = await self._json_request(
+                "POST",
+                "/tools/invoke",
+                json_body={
+                    "tool": "image_generate",
+                    "agentId": agent_id(),
+                    "args": {
+                        "prompt": prompt,
+                        "model": image_model(),
+                        "size": DEFAULT_IMAGE_SIZE,
+                        "quality": "low",
+                        "background": "opaque",
+                        "count": 1,
+                    },
                 },
-            },
-            timeout=image_timeout_s(),
-        )
-        if payload.get("ok") is not True:
-            raise OpenClawGatewayError("OpenClaw image_generate tool failed")
-        result = payload.get("result")
-        source = _source_candidates(result)
-        if source:
-            if is_cancelled is not None and is_cancelled():
-                raise asyncio.CancelledError()
-            return await self._download_media(source[0])
-        if not _task_present(result):
-            raise OpenClawGatewayError("OpenClaw image_generate returned no media or task")
-        return await self._poll_image_task(is_cancelled=is_cancelled)
+                stage="image",
+                usage_kind="image",
+                timeout=image_timeout_s(),
+            )
+            if payload.get("ok") is not True:
+                raise OpenClawGatewayError(
+                    "OpenClaw image_generate tool failed", transient=True
+                )
+            result = payload.get("result")
+            source = _source_candidates(result)
+            if source:
+                if is_cancelled is not None and is_cancelled():
+                    raise asyncio.CancelledError()
+                generated = await self._download_media(source[0])
+            elif _task_present(result):
+                generated = await self._poll_image_task(is_cancelled=is_cancelled)
+            else:
+                raise OpenClawGatewayError(
+                    "OpenClaw image_generate returned no media or task",
+                    transient=True,
+                )
+        except asyncio.CancelledError:
+            raise
+        except OpenClawGatewayError as exc:
+            _record_stage_failure(key, exc)
+            raise
+        breaker.record_success(key)
+        return generated
 
     async def _poll_image_task(self, *, is_cancelled: Any = None) -> OpenClawImage:
         deadline = asyncio.get_running_loop().time() + image_timeout_s()
@@ -639,7 +741,9 @@ class OpenClawGatewayClient:
                 timeout=request_timeout_s(),
             )
             if payload.get("ok") is not True:
-                raise OpenClawGatewayError("OpenClaw image_generate status failed")
+                raise OpenClawGatewayError(
+                    "OpenClaw image_generate status failed", transient=True
+                )
             result = payload.get("result")
             source = _source_candidates(result)
             if source:
@@ -667,10 +771,15 @@ class OpenClawGatewayClient:
                     history_sources = _history_media_candidates(history.get("result"))
                     if history_sources:
                         return await self._download_media(history_sources[-1])
-                raise OpenClawGatewayError("OpenClaw image task completed without assistant media")
+                raise OpenClawGatewayError(
+                    "OpenClaw image task completed without assistant media",
+                    transient=True,
+                )
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
-                raise OpenClawGatewayError("OpenClaw image task timed out")
+                raise OpenClawGatewayError(
+                    "OpenClaw image task timed out", transient=True
+                )
             await asyncio.sleep(min(1.0, remaining))
 
     async def _download_media(self, source: str) -> OpenClawImage:
@@ -683,13 +792,21 @@ class OpenClawGatewayClient:
         try:
             meta.raise_for_status()
             metadata = meta.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise OpenClawGatewayError("OpenClaw assistant-media metadata failed") from exc
+        except httpx.HTTPError as exc:
+            raise _http_failure("OpenClaw assistant-media metadata failed", exc) from exc
+        except ValueError as exc:
+            raise OpenClawGatewayError(
+                "OpenClaw assistant-media metadata failed", transient=True
+            ) from exc
         if not isinstance(metadata, dict) or metadata.get("available") is not True:
-            raise OpenClawGatewayError("OpenClaw assistant media is unavailable")
+            raise OpenClawGatewayError(
+                "OpenClaw assistant media is unavailable", transient=True
+            )
         ticket = metadata.get("mediaTicket")
         if not isinstance(ticket, str) or not ticket:
-            raise OpenClawGatewayError("OpenClaw assistant media ticket is missing")
+            raise OpenClawGatewayError(
+                "OpenClaw assistant media ticket is missing", transient=True
+            )
 
         media = await self._request(
             "GET",
@@ -700,12 +817,16 @@ class OpenClawGatewayClient:
         try:
             media.raise_for_status()
         except httpx.HTTPError as exc:
-            raise OpenClawGatewayError("OpenClaw assistant-media download failed") from exc
+            raise _http_failure("OpenClaw assistant-media download failed", exc) from exc
         if not media.content:
-            raise OpenClawGatewayError("OpenClaw assistant-media download was empty")
+            raise OpenClawGatewayError(
+                "OpenClaw assistant-media download was empty", transient=True
+            )
         mime_type = (media.headers.get("content-type") or "image/jpeg").split(";", 1)[0]
         if not mime_type.startswith("image/"):
-            raise OpenClawGatewayError("OpenClaw assistant-media response is not an image")
+            raise OpenClawGatewayError(
+                "OpenClaw assistant-media response is not an image", transient=True
+            )
         return OpenClawImage(media.content, mime_type, source)
 
 

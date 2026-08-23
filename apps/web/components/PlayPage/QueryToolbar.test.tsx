@@ -125,4 +125,22 @@ describe("QueryToolbar", () => {
     fireEvent.click(screen.getByRole("button", { name: "world" }));
     expect(props.setWorldMode).toHaveBeenCalledWith(false);
   });
+
+  it("NAS slim keeps only query, upload, and generate in the primary row", () => {
+    render(<QueryToolbar {...makeProps({ input: "volcanoes" })} nasSlim />);
+
+    const input = screen.getByPlaceholderText(t.placeholder);
+    const upload = screen.getByRole("button", { name: t.upload });
+    const go = screen.getByRole("button", { name: t.go });
+    expect(input.closest("form")?.className).toContain("w-full");
+    expect(input.closest("form")?.className).toContain("flex-wrap");
+    expect(input.className).toContain("min-w-0");
+    expect(upload.className).toContain("min-h-11");
+    expect(go.className).toContain("min-h-11");
+    expect(screen.queryByRole("combobox", { name: t.langLabel })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Theme" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Image quality tier" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "World Mode" })).toBeNull();
+    expect(screen.queryByText(/projected/i)).toBeNull();
+  });
 });

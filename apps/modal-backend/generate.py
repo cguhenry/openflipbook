@@ -122,7 +122,12 @@ def _paid_guard(
     limited = _rate_limited(req)
     if limited is not None:
         return limited
-    from providers import spend
+    from providers import openclaw_runtime, spend
+
+    # OAuth-backed OpenClaw does not expose authoritative dollar usage. Keep
+    # the rate limit, but never reject this path using legacy provider guesses.
+    if openclaw_runtime.enabled():
+        return None
 
     reason = spend.over_cap(session_id)
     if reason is not None:
@@ -271,6 +276,9 @@ class GenerateBody(BaseModel):
     parent_query: str | None = None
     parent_title: str | None = None
     click: Click | None = None
+    # B4 deterministic PagePlan edge provenance. The Web persistence boundary
+    # consumes it; retaining it here keeps the shared request schema lossless.
+    source_hotspot_id: str | None = None
     click_hint: str | None = None
     image_tier: str | None = None
     image_model: str | None = None
@@ -916,6 +924,14 @@ def _friendly_error(exc: BaseException) -> tuple[str, str]:
     s = str(exc).lower()
     name = type(exc).__name__
     detail = f"{name}: {exc}"[:300]
+    if getattr(exc, "code", None) == "OPENCLAW_CIRCUIT_OPEN":
+        retry_after = max(0, int(getattr(exc, "retry_after_seconds", 0)))
+        return (
+            "OpenClaw is cooling down after repeated failures. "
+            f"Retry in about {retry_after}s; History, Resume and Offline export "
+            "remain available.",
+            detail,
+        )
     if (
         getattr(exc, "error_type", None) == "no_media_generated"
         or "no_media_generated" in s
@@ -946,12 +962,49 @@ async def _event_stream(
     import time as _time
 
     from obs import bind_trace, log, record_error
-    from providers import spend
+    from providers import openclaw_runtime, spend, usage
     from providers.cancel_registry import GENERATION_CANCELS, GenerationCancelToken
 
     bind_trace(trace_id)
     started = _time.perf_counter()
     log("info", "sse.generate.start", mode=body.mode, locale=body.output_locale)
+
+    try:
+        usage_ticket = usage.begin_generation(body.session_id)
+    except usage.UsageCapError as exc:
+        scope_label = "Runtime" if exc.scope == "runtime" else "Session"
+        log("warn", "sse.generate.usage_capped", scope=exc.scope, cap=exc.cap)
+        yield _sse(
+            {
+                "type": "error",
+                "code": exc.code,
+                "scope": exc.scope,
+                "message": (
+                    f"{scope_label} generation cap reached. History, Resume and "
+                    "Offline export remain available."
+                ),
+            },
+            trace_id,
+        )
+        return
+    usage_outcome: usage.GenerationOutcome = "failed"
+
+    def _track_terminal_frame(frame: bytes, success_types: set[str]) -> None:
+        """Derive the request outcome from the SSE frame before yielding it."""
+
+        nonlocal usage_outcome
+        try:
+            text = frame.decode("utf-8").strip()
+            if not text.startswith("data:"):
+                return
+            event = json.loads(text.removeprefix("data:").strip())
+            event_type = event.get("type") if isinstance(event, dict) else None
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return
+        if event_type == "error":
+            usage_outcome = "failed"
+        elif event_type in success_types:
+            usage_outcome = "success"
 
     cancel_token: GenerationCancelToken | None = None
     if body.generation_id:
@@ -965,6 +1018,7 @@ async def _event_stream(
                 trace_id,
             )
             await GENERATION_CANCELS.finish(body.generation_id)
+            usage.finish_generation(usage_ticket, usage_outcome)
             return
 
     # Observability for client-guard regressions: the web's in-flight ref
@@ -976,7 +1030,7 @@ async def _event_stream(
     # The daily spend gate (MAX_DAILY_SPEND, providers/spend.py): refuse with
     # a clean error frame BEFORE any model call once today's estimate crosses
     # the cap. Absent/0 -> uncapped, byte-identical to before.
-    if spend.cap_exceeded():
+    if not openclaw_runtime.enabled() and spend.cap_exceeded():
         log(
             "warn",
             "sse.generate.spend_capped",
@@ -997,6 +1051,7 @@ async def _event_stream(
         )
         if cancel_token is not None:
             await GENERATION_CANCELS.finish(cancel_token.generation_id)
+        usage.finish_generation(usage_ticket, usage_outcome)
         return
 
     async def _abort_if_disconnected(stage: str) -> None:
@@ -1068,6 +1123,7 @@ async def _event_stream(
                 _abort_if_disconnected=_abort_if_disconnected,
                 _condition_url_for_role=_condition_url_for_role,
             ):
+                _track_terminal_frame(frame, {"final"})
                 yield frame
             return
 
@@ -1086,6 +1142,7 @@ async def _event_stream(
                 _view_grammar_on=_view_grammar_on,
                 _abort_if_disconnected=_abort_if_disconnected,
             ):
+                _track_terminal_frame(frame, {"ascend_ready"})
                 yield frame
             return
 
@@ -1105,6 +1162,7 @@ async def _event_stream(
                 _view_grammar_on=_view_grammar_on,
                 _abort_if_disconnected=_abort_if_disconnected,
             ):
+                _track_terminal_frame(frame, {"expand_done"})
                 yield frame
             return
 
@@ -1135,6 +1193,7 @@ async def _event_stream(
             _run_grounding=_run_grounding,
             _is_cancelled=(cancel_token.cancelled if cancel_token is not None else None),
         ):
+            _track_terminal_frame(frame, {"final"})
             yield frame
     except _asyncio.CancelledError:
         # Client dropped the SSE socket — bail out cleanly without firing
@@ -1146,6 +1205,7 @@ async def _event_stream(
             "sse.generate.cancelled",
             duration_ms=round((_time.perf_counter() - started) * 1000, 2),
         )
+        usage_outcome = "cancelled"
         return
     except Exception as exc:
         log(
@@ -1163,6 +1223,7 @@ async def _event_stream(
         else:
             yield _sse({"type": "error", "message": str(exc)}, trace_id)
     finally:
+        usage.finish_generation(usage_ticket, usage_outcome)
         if cancel_token is not None:
             await GENERATION_CANCELS.finish(cancel_token.generation_id)
 
@@ -1216,13 +1277,14 @@ async def image_seed(req: Request, body: ImageSeedBody) -> JSONResponse:
     """Return one PagePlan + local alignment for an existing uploaded image."""
 
     from obs import TRACE_HEADER, bind_trace, record_error
-    from providers import spend
+    from providers import openclaw_runtime, spend
 
     trace_id = bind_trace(req.headers.get(TRACE_HEADER) or body.trace_id)
     limited = _paid_guard(req, trace_id, body.session_id)
     if limited is not None:
         return limited
-    spend.record_vlm_call(body.session_id)
+    if not openclaw_runtime.enabled():
+        spend.record_vlm_call(body.session_id)
     try:
         if env_flag("MOCK_PROVIDERS"):
             from contracts.image_seed_contract import normalize_image_seed_envelope
@@ -1232,8 +1294,6 @@ async def image_seed(req: Request, body: ImageSeedBody) -> JSONResponse:
                 build_mock_image_seed_payload()
             )
         else:
-            from providers import openclaw_runtime
-
             if not openclaw_runtime.enabled():
                 return JSONResponse(
                     {"error": "image seed requires the OpenClaw vision provider", "trace_id": trace_id},

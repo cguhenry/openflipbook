@@ -4,6 +4,63 @@ import { modalAuthHeaders, modalUrl as joinModalUrl } from "@/lib/modal";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const USAGE_COUNTERS = [
+  "generation_requests",
+  "generation_success",
+  "generation_failed",
+  "generation_cancelled",
+  "planner_calls",
+  "alignment_calls",
+  "image_calls",
+  "searxng_searches",
+] as const;
+
+function count(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : 0;
+}
+
+function safeBreaker(value: unknown) {
+  const row = value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : {};
+  const state = ["closed", "open", "half_open"].includes(String(row.state))
+    ? String(row.state)
+    : "closed";
+  return {
+    state,
+    consecutive_failures: count(row.consecutive_failures),
+    retry_after_seconds: count(row.retry_after_seconds),
+    failure_threshold: count(row.failure_threshold),
+    cooldown_seconds: count(row.cooldown_seconds),
+  };
+}
+
+function safeUsage(value: unknown) {
+  const usage = value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : {};
+  const rawCounters = usage.counters && typeof usage.counters === "object"
+    ? usage.counters as Record<string, unknown>
+    : {};
+  const rawCaps = usage.caps && typeof usage.caps === "object"
+    ? usage.caps as Record<string, unknown>
+    : {};
+  return {
+    scope: "since backend start",
+    counters: Object.fromEntries(
+      USAGE_COUNTERS.map((key) => [key, count(rawCounters[key])]),
+    ),
+    caps: {
+      runtime_generations: count(rawCaps.runtime_generations),
+      session_generations: count(rawCaps.session_generations),
+    },
+    accepted_generations: count(usage.accepted_generations),
+    tracked_sessions: count(usage.tracked_sessions),
+  };
+}
+
 export async function GET() {
   const modalUrl = process.env.MODAL_API_URL;
   if (!modalUrl) {
@@ -21,6 +78,7 @@ export async function GET() {
     });
     const raw = (await upstream.json().catch(() => null)) as Record<string, unknown> | null;
     const providers = raw?.providers as Record<string, unknown> | undefined;
+    const breakers = raw?.breakers as Record<string, unknown> | undefined;
     return NextResponse.json(
       {
         ok: raw?.ok === true,
@@ -37,10 +95,20 @@ export async function GET() {
         mongo_connected: raw?.mongo_connected === true ? true : raw?.mongo_connected === false ? false : null,
         minio_connected: raw?.minio_connected === true ? true : raw?.minio_connected === false ? false : null,
         mock_mode: raw?.mock_mode === true,
-        providers: {
-          fal: providers?.fal === true,
-          openrouter: providers?.openrouter === true,
+        providers: raw?.live_provider === "openclaw"
+          ? { openclaw: providers?.openclaw === true }
+          : {
+              fal: providers?.fal === true,
+              openrouter: providers?.openrouter === true,
+            },
+        provider_control: "read_only",
+        model_control: "read_only",
+        alternate_provider_fallback: raw?.alternate_provider_fallback === true,
+        breakers: {
+          responses: safeBreaker(breakers?.responses),
+          image: safeBreaker(breakers?.image),
         },
+        usage: safeUsage(raw?.usage),
       },
       { status: upstream.status },
     );

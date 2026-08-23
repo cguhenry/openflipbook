@@ -56,6 +56,14 @@ export async function getDb(): Promise<Db> {
   }
 }
 
+/** Client paired with getDb(), for the owner-restore multi-collection transaction. */
+export async function getMongoClient(): Promise<MongoClient> {
+  await getDb();
+  const current = globalThis.__endlessCanvasMongo;
+  if (!current) throw new Error("Mongo client unavailable after bootstrap");
+  return current.client;
+}
+
 async function ensureIndexes(db: Db): Promise<void> {
   const nodes = db.collection<NodeDoc>("nodes");
   const errors = db.collection<ErrorDoc>("errors");
