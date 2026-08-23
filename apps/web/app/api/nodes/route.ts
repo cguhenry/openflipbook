@@ -5,7 +5,7 @@ import type {
   ScaleTier,
   SceneView,
 } from "@openflipbook/config";
-import { insertNode } from "@/lib/db";
+import { getNode, insertNode } from "@/lib/db";
 import { decodeDataUrl, uploadJpeg } from "@/lib/r2";
 import { readServerEnv } from "@/lib/env";
 import { requireOwner } from "@/lib/session-owner";
@@ -25,6 +25,7 @@ interface CreateBody {
   aspect_ratio?: string;
   final_prompt?: string | null;
   click_in_parent?: { x_pct: number; y_pct: number } | null;
+  source_hotspot_id?: string | null;
   sources?: {
     id?: string;
     url: string;
@@ -65,6 +66,42 @@ export async function POST(req: Request) {
   const auth = await requireOwner(body.session_id);
   if (!auth.ok) return auth.res;
 
+  // An explicit semantic edge is authoritative. Validate it before uploading
+  // the child so invalid provenance cannot be silently repaired from a click
+  // coordinate or leave an orphan blob behind.
+  if (body.source_hotspot_id !== undefined && body.source_hotspot_id !== null) {
+    if (
+      typeof body.source_hotspot_id !== "string" ||
+      !body.source_hotspot_id.trim() ||
+      !body.parent_id
+    ) {
+      return NextResponse.json(
+        { error: "explicit source_hotspot_id requires a parent_id" },
+        { status: 400 },
+      );
+    }
+    const parent = await getNode(body.parent_id);
+    const planned = parent?.page_plan?.hotspots.find(
+      (hotspot) => hotspot.id === body.source_hotspot_id,
+    );
+    const aligned = parent?.aligned_hotspots?.some(
+      (hotspot) => hotspot.id === body.source_hotspot_id,
+    );
+    if (
+      !parent ||
+      parent.session_id !== body.session_id ||
+      !planned ||
+      !aligned ||
+      !planned.sub_query.trim() ||
+      body.query !== planned.sub_query
+    ) {
+      return NextResponse.json(
+        { error: "invalid explicit hotspot edge provenance" },
+        { status: 400 },
+      );
+    }
+  }
+
   // Idempotent create: a retry with the same Idempotency-Key returns the
   // already-persisted node instead of inserting a duplicate (and skips the
   // re-upload).
@@ -87,6 +124,7 @@ export async function POST(req: Request) {
 
   const row = await insertNode({
     parent_id: body.parent_id ?? null,
+    source_hotspot_id: body.source_hotspot_id ?? null,
     session_id: body.session_id,
     query: body.query,
     page_title: body.page_title,

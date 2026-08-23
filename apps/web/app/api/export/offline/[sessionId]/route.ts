@@ -121,6 +121,7 @@ export async function GET(_req: Request, { params }: Params) {
     nodes.push({
       id: row.id,
       parent_id: row.parent_id,
+      source_hotspot_id: row.source_hotspot_id,
       session_id: row.session_id,
       query: row.query,
       page_title: row.page_title || row.query,

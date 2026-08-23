@@ -146,6 +146,7 @@ import {
   type Page,
   type SessionNodeWire,
 } from "@/lib/session-pages";
+import { findExplicitChild } from "@/lib/session-graph";
 import { useImageMorph } from "@/hooks/useImageMorph";
 import { PRODUCT_FLAGS } from "@/lib/product-flags";
 import PageContractOverlay from "@/components/PlayPage/PageContractOverlay";
@@ -228,6 +229,7 @@ interface PersistBody {
   aspect_ratio: string;
   final_prompt: string;
   click_in_parent?: { x_pct: number; y_pct: number } | null;
+  source_hotspot_id?: string | null;
   sources?: {
     id?: string;
     url: string;
@@ -310,6 +312,7 @@ async function triggerExtraction(args: {
   sceneView?: SceneView | null;
   traceId: string | null;
 }): Promise<{ added: number; updated: number } | null> {
+  if (PRODUCT_FLAGS.nasSlim) return null;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -1125,6 +1128,8 @@ export default function PlayPage() {
                 prompt_author_model: evt.prompt_author_model,
                 aspect_ratio: body.aspect_ratio,
                 final_prompt: evt.final_prompt,
+                source_hotspot_id:
+                  body.mode === "tap" ? body.source_hotspot_id ?? null : null,
                 // An edit is a REVISION of the current page, not a place
                 // inside it — the graph chrome renders it as "✎ edited".
                 ...(body.mode === "edit" ? { relation: "edit" as const } : {}),
@@ -1165,6 +1170,8 @@ export default function PlayPage() {
                   title: evt.page_title,
                   imageDataUrl: evt.image_data_url,
                   parentId: body.current_node_id || null,
+                  sourceHotspotId:
+                    body.mode === "tap" ? body.source_hotspot_id ?? null : null,
                   sources: evtSources,
                   pagePlan: evt.page_plan ?? null,
                   alignedHotspots: evt.aligned_hotspots ?? null,
@@ -2711,6 +2718,29 @@ export default function PlayPage() {
         page.alignedHotspots?.length
           ? resolveHotspot(page.pagePlan, page.alignedHotspots, click.x_pct, click.y_pct)
           : null;
+      const sourceHotspotId = deterministicHit?.planned.sub_query.trim()
+        ? deterministicHit.planned.id
+        : null;
+      if (sourceHotspotId && currentNodeId) {
+        const existingChildId = findExplicitChild(
+          history.items.flatMap((item) =>
+            item.nodeId
+              ? [{
+                  id: item.nodeId,
+                  parent_id: item.parentId ?? null,
+                  source_hotspot_id: item.sourceHotspotId ?? null,
+                }]
+              : [],
+          ),
+          currentNodeId,
+          sourceHotspotId,
+        );
+        if (existingChildId) {
+          clickInFlightRef.current = false;
+          selectFromMap(existingChildId);
+          return;
+        }
+      }
       const cached: PrefetchEntry | undefined = deterministicHit
         ? deterministicTapPrefetch(deterministicHit)
         : hint || worldEnabled
@@ -2937,7 +2967,9 @@ export default function PlayPage() {
             )
           : null;
       void generate({
-        query: page.query,
+        query: sourceHotspotId
+          ? deterministicHit!.planned.sub_query
+          : page.query,
         aspect_ratio: "16:9",
         web_search: true,
         session_id: page.sessionId,
@@ -2947,6 +2979,7 @@ export default function PlayPage() {
         parent_query: page.query,
         parent_title: page.title,
         click,
+        source_hotspot_id: sourceHotspotId,
         image_tier: imageTier,
         ...loopWire,
         ...(devModel ? { image_model: devModel } : {}),

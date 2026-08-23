@@ -32,6 +32,8 @@ export async function GET(req: Request, { params }: Params) {
     parent_id: id,
     children: rows.map((row) => ({
       id: row.id,
+      parent_id: row.parent_id,
+      source_hotspot_id: row.source_hotspot_id,
       session_id: row.session_id,
       query: row.query,
       page_title: row.page_title,

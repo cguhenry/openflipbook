@@ -148,6 +148,7 @@ function worldNode(
     created_at: "2026-06-11T00:00:00Z",
     relation: "descend",
     scale_tier: null,
+    source_hotspot_id: null,
     click_in_parent: null,
     scene_view: null,
     sources: [],
@@ -163,7 +164,8 @@ describe("buildWorldZip", () => {
       [
         worldNode("a", jpg, null, { scale_tier: "city" }),
         worldNode("b", jpg, "a", {
-          relation: "expand",
+        relation: "expand",
+          source_hotspot_id: "h001",
           click_in_parent: { x_pct: 0.5, y_pct: 0.5 },
         }),
         worldNode("c", null, "b"), // missing blob → stays in the graph, no image file
@@ -181,6 +183,7 @@ describe("buildWorldZip", () => {
     expect(graph.nodes[1]).toMatchObject({
       id: "b",
       parent_id: "a",
+      source_hotspot_id: "h001",
       relation: "expand",
       click_in_parent: { x_pct: 0.5, y_pct: 0.5 },
     });

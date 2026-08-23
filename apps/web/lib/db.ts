@@ -117,6 +117,9 @@ export interface NodeSource {
 export interface NodeDoc extends Document {
   _id: string;
   parent_id: string | null;
+  // Explicit semantic edge provenance. Optional on legacy Mongo rows; roots
+  // and legacy children normalize to null at the read boundary.
+  source_hotspot_id?: string | null;
   session_id: string;
   query: string;
   page_title: string;
@@ -158,6 +161,7 @@ export interface NodeInsert {
   // build the new parent's self-referential scene_view.node_id before inserting.
   id?: string;
   parent_id: string | null;
+  source_hotspot_id?: string | null;
   session_id: string;
   query: string;
   page_title: string;
@@ -180,6 +184,7 @@ export interface NodeInsert {
 export interface NodeRow {
   id: string;
   parent_id: string | null;
+  source_hotspot_id: string | null;
   session_id: string;
   query: string;
   page_title: string;
@@ -211,6 +216,7 @@ export function toRow(doc: NodeDoc): NodeRow {
     _id,
     created_at,
     click_in_parent,
+    source_hotspot_id,
     sources,
     relation,
     scale,
@@ -226,6 +232,7 @@ export function toRow(doc: NodeDoc): NodeRow {
     id: _id,
     ...rest,
     click_in_parent: click_in_parent ?? null,
+    source_hotspot_id: source_hotspot_id ?? null,
     sources: Array.isArray(sources) ? sources : [],
     relation: relation ?? "descend",
     scale: scale ?? "peer",
@@ -244,6 +251,7 @@ export async function insertNode(n: NodeInsert): Promise<NodeRow> {
   const doc: NodeDoc = {
     _id: n.id ?? crypto.randomUUID(),
     parent_id: n.parent_id,
+    source_hotspot_id: n.source_hotspot_id ?? null,
     session_id: n.session_id,
     query: n.query,
     page_title: n.page_title,

@@ -61,6 +61,7 @@ export async function GET(_req: Request, { params }: Params) {
     nodes.push({
       id: r.id,
       parent_id: r.parent_id,
+      source_hotspot_id: r.source_hotspot_id,
       title: r.page_title || r.query,
       query: r.query,
       created_at: r.created_at,

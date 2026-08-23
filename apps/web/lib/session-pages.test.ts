@@ -34,8 +34,17 @@ describe("nodeToPage (?continue= hydration)", () => {
     expect(p.title).toBe("t");
     expect(p.imageDataUrl).toBe("https://cdn/img.jpg");
     expect(p.parentId).toBe("n0");
+    expect(p.sourceHotspotId).toBeNull();
     expect(p.clickInParent).toEqual({ xPct: 0.25, yPct: 0.75 });
     expect(p.sources).toEqual([{ url: "https://a", title: "A" }]);
+  });
+
+  it("hydrates explicit source hotspot provenance and keeps legacy rows nullable", () => {
+    expect(
+      nodeToPage(wire({ parent_id: "n0", source_hotspot_id: "h007" }))
+        .sourceHotspotId,
+    ).toBe("h007");
+    expect(nodeToPage(wire()).sourceHotspotId).toBeNull();
   });
 
   it("rides relation from the node row — an expand-bloomed child hydrates as an expand Page", () => {

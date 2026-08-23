@@ -8,6 +8,7 @@ import { resolveHotspot } from "@/lib/hotspot-resolver";
 export interface OfflineSourceNode {
   id: string;
   parent_id?: string | null;
+  source_hotspot_id?: string | null;
   session_id: string;
   query: string;
   page_title: string;
@@ -50,6 +51,7 @@ export interface PortableHotspot {
 export interface PortableNode {
   id: string;
   parent_id: string | null;
+  source_hotspot_id: string | null;
   title: string;
   query: string;
   image: string;
@@ -101,10 +103,10 @@ function portableSources(
 /**
  * Build a file://-portable book manifest from persisted session rows.
  *
- * A2 does not persist source_hotspot_id, so child-to-hotspot links are recovered
- * deterministically from the child's click_in_parent against the parent contract.
- * When the same hotspot was explored more than once, the newest child becomes
- * the default click target while every node remains present in nodes.
+ * Explicit source_hotspot_id is the semantic edge contract. Legacy rows without
+ * it are recovered deterministically from click_in_parent against the parent
+ * contract. When the same edge was explored more than once, the newest child
+ * becomes the default click target while every node remains present in nodes.
  */
 export function buildPortableBook(
   sourceNodes: readonly OfflineSourceNode[],
@@ -116,9 +118,43 @@ export function buildPortableBook(
   const rows = ordered(sourceNodes);
   const byId = new Map(rows.map((node) => [node.id, node] as const));
   const childLink = new Map<string, { childId: string; created: number }>();
+  const explicitEdgeKeys = new Set<string>();
+
+  const rememberNewest = (key: string, childId: string, created: number) => {
+    const previous = childLink.get(key);
+    if (!previous || created >= previous.created) {
+      childLink.set(key, { childId, created });
+    }
+  };
+
+  // First register every explicit key, including invalid ones, so a malformed
+  // explicit edge can never be silently replaced by coordinate inference.
+  for (const child of rows) {
+    if (!child.parent_id || child.source_hotspot_id == null) continue;
+    const key = child.parent_id + ":" + child.source_hotspot_id;
+    explicitEdgeKeys.add(key);
+    const parent = byId.get(child.parent_id);
+    const hasPlanned = Boolean(
+      parent?.page_plan?.hotspots.some(
+        (hotspot) => hotspot.id === child.source_hotspot_id,
+      ),
+    );
+    const hasAligned = Boolean(
+      parent?.aligned_hotspots?.some(
+        (hotspot) => hotspot.id === child.source_hotspot_id,
+      ),
+    );
+    if (hasPlanned && hasAligned) {
+      rememberNewest(key, child.id, epoch(child.created_at));
+    }
+  }
 
   for (const child of rows) {
-    if (!child.parent_id || !child.click_in_parent) continue;
+    if (
+      !child.parent_id ||
+      child.source_hotspot_id != null ||
+      !child.click_in_parent
+    ) continue;
     const parent = byId.get(child.parent_id);
     if (!parent?.page_plan || !parent.aligned_hotspots?.length) continue;
 
@@ -131,11 +167,9 @@ export function buildPortableBook(
     if (!hit) continue;
 
     const key = parent.id + ":" + hit.planned.id;
+    if (explicitEdgeKeys.has(key)) continue;
     const created = epoch(child.created_at);
-    const previous = childLink.get(key);
-    if (!previous || created >= previous.created) {
-      childLink.set(key, { childId: child.id, created });
-    }
+    rememberNewest(key, child.id, created);
   }
 
   const nodes: PortableNode[] = rows.map((node) => {
@@ -160,6 +194,7 @@ export function buildPortableBook(
     return {
       id: node.id,
       parent_id: node.parent_id ?? null,
+      source_hotspot_id: node.source_hotspot_id ?? null,
       title: node.page_title,
       query: node.query,
       image: node.image_asset,

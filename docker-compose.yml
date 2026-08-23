@@ -161,6 +161,13 @@ services:
       # .env's WORLD_MODE so the single-file demo stays single-file.
       args:
         NEXT_PUBLIC_WORLD_MODE: ${NEXT_PUBLIC_WORLD_MODE:-${WORLD_MODE:-false}}
+        # The NAS self-use profile is intentionally deterministic and slim:
+        # no world/extraction side effects, no AI prefetch/video calls, and
+        # PagePlan taps can reopen explicit persisted edges locally.
+        NEXT_PUBLIC_NAS_SLIM: ${NEXT_PUBLIC_NAS_SLIM:-true}
+        NEXT_PUBLIC_VIDEO: ${NEXT_PUBLIC_VIDEO:-false}
+        NEXT_PUBLIC_AI_PREFETCH: ${NEXT_PUBLIC_AI_PREFETCH:-false}
+        NEXT_PUBLIC_DETERMINISTIC_HITMAP: ${NEXT_PUBLIC_DETERMINISTIC_HITMAP:-true}
         NEXT_PUBLIC_DOM_LABELS: ${NEXT_PUBLIC_DOM_LABELS:-${WORLD_MODE:-false}}
         NEXT_PUBLIC_ON_RAMP_COACH: ${NEXT_PUBLIC_ON_RAMP_COACH:-false}
         NEXT_PUBLIC_ENTER_COACH: ${NEXT_PUBLIC_ENTER_COACH:-false}

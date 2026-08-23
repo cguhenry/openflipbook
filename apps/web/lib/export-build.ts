@@ -97,6 +97,7 @@ export async function buildPortableZip(
 export interface WorldExportNode {
   id: string;
   parent_id: string | null;
+  source_hotspot_id: string | null;
   title: string;
   query: string;
   created_at: string;
@@ -128,6 +129,7 @@ export async function buildWorldZip(
     return {
       id: n.id,
       parent_id: n.parent_id,
+      source_hotspot_id: n.source_hotspot_id,
       title: n.title,
       query: n.query,
       created_at: n.created_at,

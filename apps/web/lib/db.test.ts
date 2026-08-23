@@ -69,3 +69,17 @@ describe("toRow image seed metadata", () => {
     expect(toRow(doc()).seed_type).toBeNull();
   });
 });
+
+describe("toRow source hotspot provenance", () => {
+  it("round-trips an explicit edge", () => {
+    const row = toRow(doc({
+      parent_id: "parent",
+      source_hotspot_id: "h007",
+    }));
+    expect(row.source_hotspot_id).toBe("h007");
+  });
+
+  it("normalizes missing legacy provenance to null", () => {
+    expect(toRow(doc()).source_hotspot_id).toBeNull();
+  });
+});

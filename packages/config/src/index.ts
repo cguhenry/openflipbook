@@ -103,6 +103,9 @@ export interface GenerateRequestBody {
   parent_query?: string;
   parent_title?: string;
   click?: { x_pct: number; y_pct: number };
+  // B4: deterministic tap provenance carried through the normal child path
+  // and consumed by the Web persistence boundary.
+  source_hotspot_id?: string | null;
   // Free-form note from the user, captured via cmd/ctrl-click on the image
   // ("show this from a cross-section", "explain like I'm 5"). Folded into the
   // planner query so the next page reflects the user's specific angle.

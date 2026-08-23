@@ -15,6 +15,9 @@ export interface Page {
   imageDataUrl: string | null;
   // Set when this page was generated as a child of another via a tap.
   parentId?: string | null;
+  // Exact PagePlan hotspot used to create this child. Null on roots and
+  // legacy rows whose edge can still be recovered from clickInParent.
+  sourceHotspotId?: string | null;
   // Where the user clicked on the parent page (0..1). Used by the map
   // view to position the child tile inside the parent's rect.
   clickInParent?: { xPct: number; yPct: number };
@@ -45,6 +48,7 @@ export interface Page {
 export interface SessionNodeWire {
   id: string;
   parent_id: string | null;
+  source_hotspot_id?: string | null;
   session_id: string;
   query: string;
   page_title: string;
@@ -107,6 +111,7 @@ export function nodeToPage(n: SessionNodeWire): Page {
     title: n.page_title,
     imageDataUrl: n.image_url,
     parentId: n.parent_id,
+    sourceHotspotId: n.source_hotspot_id ?? null,
     sources: Array.isArray(n.sources) ? n.sources : [],
     sceneView: n.scene_view ?? null,
     geoExtracted: n.geo_extracted ?? false,
