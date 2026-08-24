@@ -2431,11 +2431,9 @@ export default function PlayPage() {
   useEffect(() => {
     const img = imgRef.current;
     if (!img || !page?.imageDataUrl) return;
-    // Image seeds already have a persisted deterministic hitmap. Do not warm
-    // the legacy hover resolver or spend another vision call for them.
-    if (page.pagePlan && page.alignedHotspots?.length) return;
     const currentImage = page.imageDataUrl;
     const currentNodeId = page.nodeId;
+    const deterministicPage = Boolean(page.pagePlan && page.alignedHotspots?.length);
     const cache = prefetchCacheRef.current;
     const inflight = prefetchInflightRef.current;
 
@@ -2443,6 +2441,7 @@ export default function PlayPage() {
     const pageScope = currentNodeId ?? "noid";
 
     const firePrefetch = (xPct: number, yPct: number) => {
+      if (deterministicPage) return;
       if (!PRODUCT_FLAGS.aiPrefetch) return;
       const key = bucketKey(currentNodeId, xPct, yPct);
       if (prefetchCurrentKeyRef.current === key) return;
@@ -3269,6 +3268,7 @@ export default function PlayPage() {
       const click = normalizeClickOnImage(evt, img);
       if (!click) return;
       if (worldEnabled) return;
+      if (deterministicPage) return;
       if (!PRODUCT_FLAGS.aiPrefetch) return;
       if (prefetchTimerRef.current !== null) {
         window.clearTimeout(prefetchTimerRef.current);
@@ -3983,7 +3983,9 @@ export default function PlayPage() {
                       ? "cursor-wait"
                       : phase === "generating" || editMode
                         ? "cursor-crosshair"
-                        : "cursor-none")
+                        : PRODUCT_FLAGS.nasSlim
+                          ? "cursor-pointer"
+                          : "cursor-none")
                   }
                   onMorphTransitionEnd={(e) => {
                     // Ink-bloom transitions on `mask-size` / `-webkit-mask-size`;
@@ -4056,7 +4058,8 @@ export default function PlayPage() {
 
               {imgFailed && <ImageFailedOverlay t={t} />}
 
-              {hoverPos &&
+              {!PRODUCT_FLAGS.nasSlim &&
+                hoverPos &&
                 phase !== "generating" &&
                 !editMode &&
                 streamStatus === "off" && (
