@@ -6,7 +6,7 @@ name: openflipbook-a0
 
 services:
   mongo:
-    image: mongo:4.4
+    image: mongo@sha256:4be76f674fc4b27859816811b8baa3c51830eb1dbf4ca81a51e26b79edd662ef
     ports: !override
       - "127.0.0.1:27017:27017"
     healthcheck:
@@ -16,7 +16,7 @@ services:
       retries: 5
 
   mongo-init:
-    image: mongo:4.4
+    image: mongo@sha256:4be76f674fc4b27859816811b8baa3c51830eb1dbf4ca81a51e26b79edd662ef
     command: >
       mongo --host mongo --quiet --eval
       "var s = db.adminCommand({replSetGetStatus: 1}); if (s.ok !== 1) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) }"

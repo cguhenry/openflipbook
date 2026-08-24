@@ -48,7 +48,7 @@ services:
   # image_url values retain R2_PUBLIC_BASE_URL, while normal browser rendering
   # uses the same-origin /api/image/<nodeId> route.
   minio:
-    image: minio/minio:latest
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: openflipbook-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -65,7 +65,7 @@ services:
   # browser's <img src> GETs aren't 403'd. Retries until Minio answers, then
   # exits — `web` waits on it completing.
   minio-setup:
-    image: minio/mc:latest
+    image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     container_name: openflipbook-minio-setup
     depends_on:
       - minio
