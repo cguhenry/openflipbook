@@ -325,6 +325,7 @@ async def test_responses_alignment_sends_base64_image_and_exact_ids(
     assert "Never swap ids" in system_text
     assert "empty label box" in system_text
     assert "visual_target" in system_text
+    assert "hotspot-like dots" in system_text
     user_content = captured[0]["input"][1]["content"]
     assert user_content[-1] == {
         "type": "input_image",
@@ -398,6 +399,8 @@ async def test_image_seed_returns_contract_and_makes_one_vision_request(
     assert "explicitly contain the words 'no text'" in system_text
     assert "empty label boxes" in system_text
     assert "DOM owns labels" in system_text
+    assert "prefer 5 to 8 meaningful hotspots and target 6" in system_text
+    assert "hotspot-like dots, pins, target rings, leader-line markers" in system_text
     for required in (
         '"title"',
         '"summary"',

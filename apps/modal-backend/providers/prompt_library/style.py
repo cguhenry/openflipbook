@@ -17,8 +17,10 @@ NO_LETTERING = (
     "Do not write ANY names, lettering, text, or cartouches into the image — "
     "the interface overlays names separately. Do not draw empty label boxes, "
     "callout frames, legends, text placeholders, blank annotation rectangles, "
-    "or connector-label placeholders; leave those elements out because the DOM "
-    "owns labels."
+    "or connector-label placeholders; do not add decorative hotspot-like dots, "
+    "pins, target rings, leader-line markers, or legend markers unless each one "
+    "represents a planned visual target; leave those elements out because the "
+    "DOM owns labels."
 )
 
 

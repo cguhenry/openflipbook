@@ -111,6 +111,40 @@ def test_plan_alignment_and_current_rendered_page_contract() -> None:
     assert all(row["resolved_id"] for row in resolver["centers"].values())
 
 
+def test_accepts_rich_scene_hotspot_range_without_filler() -> None:
+    rich = json.loads(json.dumps(PLAN))
+    rich["hotspots"].extend(
+        {
+            "id": f"h00{index}",
+            "label": f"區域 {index}",
+            "sub_query": f"區域 {index} 的作用",
+            "visual_target": f"distinct region {index}",
+            "desired_bbox": [0.05 + (index - 4) * 0.15, 0.55, 0.1, 0.25],
+        }
+        for index in range(4, 7)
+    )
+    normalized = validate_page_plan_minimal(rich)
+    assert len(normalized["hotspots"]) == 6
+    assert len({row["id"] for row in normalized["hotspots"]}) == 6
+
+    for count in (1, 9):
+        invalid = json.loads(json.dumps(PLAN))
+        invalid["hotspots"] = invalid["hotspots"][:count]
+        if count == 9:
+            invalid["hotspots"].extend(
+                {
+                    "id": f"h00{index}",
+                    "label": f"區域 {index}",
+                    "sub_query": f"區域 {index} 的作用",
+                    "visual_target": f"distinct region {index}",
+                    "desired_bbox": [0.05, 0.55, 0.1, 0.25],
+                }
+                for index in range(4, 10)
+            )
+        with pytest.raises((OpenClawContractError, ValidationError)):
+            validate_page_plan_minimal(invalid)
+
+
 def test_normalizes_flipbook_text_block_aliases() -> None:
     aliased = json.loads(json.dumps(PLAN))
     aliased["text_blocks"] = [

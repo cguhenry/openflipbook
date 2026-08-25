@@ -53,6 +53,15 @@ PLAN_SCHEMA: dict[str, Any] = {
     "required": ["page_title", "prompt"],
 }
 
+RICH_SCENE_HOTSPOT_POLICY = (
+    "RICH-SCENE HOTSPOT POLICY: For a rich map, diagram, cutaway, anatomy, "
+    "architecture overview, or other scene with many distinct explorable "
+    "regions, prefer 5 to 8 meaningful hotspots and target 6 when the scene "
+    "naturally supports it. Genuinely sparse scenes may use 2 to 4. Never add "
+    "filler: every hotspot needs a unique label, unique sub_query, concrete "
+    "visual_target, and non-trivial desired_bbox."
+)
+
 
 def _spatial_anchor_clause(render_mode: str | None, surroundings: str | None) -> str:
     """World Mode spatial anchor: keep the entered place's neighbours where the
@@ -180,7 +189,10 @@ async def plan_page(
     # scene the reader has stepped into, or a closer cartographic sub-map.
     # `explainer` (the default) is today's behaviour, untouched.
     rmode = (render_mode or "explainer").lower()
-    system_parts = [_render_base_instruction(rmode, label_free=label_free)]
+    system_parts = [
+        _render_base_instruction(rmode, label_free=label_free),
+        RICH_SCENE_HOTSPOT_POLICY,
+    ]
     has_parent_frame = bool(
         (parent_title and parent_title.strip())
         or (parent_query and parent_query.strip())
@@ -303,9 +315,11 @@ async def plan_page(
             "be a valid hyphenated position such as top or bottom-left. Do not "
             "use content, position, or headline aliases. Use JSON number literals "
             "for all bbox coordinates, never number words. "
-            "and exactly three hotspots with ids h001, h002, and h003. Each "
-            "hotspot needs label, sub_query, visual_target, and a normalized "
-            "desired_bbox [x,y,width,height]. Use valid Page Contract enum values. "
+            "Use 2 to 8 hotspots with ids h001, h002, ...; for rich scenes "
+            "prefer 5 to 8 and target 6, while genuinely sparse scenes may use "
+            "2 to 4. Each hotspot needs a unique label, unique sub_query, "
+            "concrete visual_target, and a normalized desired_bbox "
+            "[x,y,width,height]. Use valid Page Contract enum values. "
             "The text_blocks are interface overlays, so do not ask the image "
             "renderer to draw their text. When grounded sources are supplied, "
             "cite factual text with source_ids using only those local ids; "

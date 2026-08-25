@@ -1925,8 +1925,8 @@ export default function PlayPage() {
   }, []);
 
   const dispatchHotspotLabel = useCallback((hotspotId: string) => {
-    if (!page?.pagePlan || !page.alignedHotspots?.length) return;
-    const intent = hotspotIntentById(page.pagePlan, page.alignedHotspots, hotspotId);
+    if (!page?.pagePlan) return;
+    const intent = hotspotIntentById(page.pagePlan, page.alignedHotspots ?? [], hotspotId);
     const img = imgRef.current;
     if (!intent || !img) return;
     const rect = img.getBoundingClientRect();

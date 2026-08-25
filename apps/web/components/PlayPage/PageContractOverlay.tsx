@@ -6,6 +6,7 @@ import type {
   TextBlockV1,
 } from "@openflipbook/config";
 import { citationNumbers } from "@/lib/citation-utils";
+import { canonicalHotspotRows } from "@/lib/hotspot-resolver";
 import { formatUi, getStrings, type LocaleStrings } from "@/lib/i18n";
 
 const ANCHOR_CLASS: Record<TextAnchorV1, string> = {
@@ -66,15 +67,14 @@ export function hotspotLabelLayout(
   pagePlan: PagePlanV1,
   alignedHotspots: readonly AlignedHotspotV1[],
 ): Map<string, HotspotLabelLayout> {
-  const planned = new Map(pagePlan.hotspots.map((hotspot) => [hotspot.id, hotspot] as const));
   const used: { left: number; top: number; width: number; height: number }[] = [];
   const layouts = new Map<string, HotspotLabelLayout>();
-  const rows = alignedHotspots
-    .map((aligned) => ({ aligned, planned: planned.get(aligned.id) }))
-    .filter((row): row is { aligned: AlignedHotspotV1; planned: PagePlanV1["hotspots"][number] } =>
-      Boolean(row.planned?.label.trim()),
-    )
-    .sort((a, b) => a.aligned.actual_bbox[1] - b.aligned.actual_bbox[1] || a.aligned.id.localeCompare(b.aligned.id));
+  const rows = canonicalHotspotRows(pagePlan, alignedHotspots)
+    .filter((row) => row.planned.label.trim())
+    .sort((a, b) =>
+      a.aligned.actual_bbox[1] - b.aligned.actual_bbox[1] ||
+      a.planned.id.localeCompare(b.planned.id),
+    );
 
   for (const [index, row] of rows.entries()) {
     const [x, y, w, h] = row.aligned.actual_bbox;
@@ -105,7 +105,7 @@ export function hotspotLabelLayout(
     const top = chosen.transform.includes("-100%") ? chosen.top - height :
       chosen.transform.includes("-50%") ? chosen.top - height / 2 : chosen.top;
     used.push({ left, top, width, height });
-    layouts.set(row.aligned.id, chosen);
+    layouts.set(row.planned.id, chosen);
   }
   return layouts;
 }
@@ -126,6 +126,14 @@ export function PageContractOverlay({
     <div
       data-testid="page-contract-overlay"
       data-responsive-overlay="a3"
+      data-planned-hotspot-count={pagePlan.hotspots.length}
+      data-aligned-hotspot-count={canonicalHotspotRows(pagePlan, alignedHotspots).filter(
+        (row) => row.geometry_source === "aligned",
+      ).length}
+      data-visible-label-count={pagePlan.hotspots.filter((hotspot) => hotspot.label.trim()).length}
+      data-fallback-label-count={canonicalHotspotRows(pagePlan, alignedHotspots).filter(
+        (row) => row.geometry_source === "planned_fallback" && row.planned.label.trim(),
+      ).length}
       aria-hidden="false"
       className="pointer-events-none absolute z-[6] overflow-hidden"
       style={frameStyle ?? { inset: 0 }}
@@ -139,37 +147,41 @@ export function PageContractOverlay({
         >
           <span className="pointer-events-auto max-w-full cursor-text select-text overflow-wrap-anywhere rounded-md bg-[color:rgba(250,248,240,.86)] px-[clamp(.4rem,1.4vw,.7rem)] py-[clamp(.25rem,.9vw,.45rem)] text-[var(--color-ink)] shadow-sm backdrop-blur-[2px]">
             {block.text}
-            {citationNumbers(block, pagePlan.sources).map((number) => (
-              <sup
-                key={`${block.id}-source-${number}`}
-                data-source-marker={number}
-                className="ms-0.5 align-super text-[.68em] font-semibold text-[var(--color-ink)]/75"
-                aria-label={formatUi(t.sourceNumber, { number })}
-              >
-                [{number}]
-              </sup>
-            ))}
+            {block.role !== "title" && block.role !== "subtitle" &&
+              citationNumbers(block, pagePlan.sources).map((number) => (
+                <sup
+                  key={`${block.id}-source-${number}`}
+                  data-source-marker={number}
+                  className="ms-0.5 align-super text-[.68em] font-semibold text-[var(--color-ink)]/75"
+                  aria-label={formatUi(t.sourceNumber, { number })}
+                >
+                  [{number}]
+                </sup>
+              ))}
           </span>
         </div>
       ))}
 
       {showHotspots && (() => {
+        const rows = canonicalHotspotRows(pagePlan, alignedHotspots).filter(
+          (row) => row.planned.label.trim(),
+        );
         const layouts = hotspotLabelLayout(pagePlan, alignedHotspots);
-        return alignedHotspots.map((hotspot) => {
-          const planned = pagePlan.hotspots.find((candidate) => candidate.id === hotspot.id);
-          const layout = layouts.get(hotspot.id);
-          if (!planned || !layout || !planned.label.trim()) return null;
+        return rows.map((row) => {
+          const layout = layouts.get(row.planned.id);
+          if (!layout) return null;
           return (
             <button
-              key={hotspot.id}
+              key={row.planned.id}
               type="button"
               data-hotspot-label="true"
-              data-hotspot-id={hotspot.id}
-              aria-label={planned.label}
-              title={planned.label}
+              data-hotspot-id={row.planned.id}
+              data-geometry-source={row.geometry_source}
+              aria-label={row.planned.label}
+              title={row.planned.label}
               onClick={(event) => {
                 event.stopPropagation();
-                onHotspotActivate?.(hotspot.id);
+                onHotspotActivate?.(row.planned.id);
               }}
               className="pointer-events-auto absolute z-[1] max-w-[36%] -translate-y-0 rounded-md border border-amber-200/80 bg-black/75 px-2 py-1 text-left text-[clamp(.68rem,1.45vw,.95rem)] font-medium leading-tight text-white shadow-md backdrop-blur-sm hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-amber-300"
               style={{
@@ -178,7 +190,7 @@ export function PageContractOverlay({
                 transform: layout.transform,
               }}
             >
-              {planned.label}
+              {row.planned.label}
             </button>
           );
         });

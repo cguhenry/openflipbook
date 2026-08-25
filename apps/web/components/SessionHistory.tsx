@@ -22,6 +22,25 @@ interface Props {
   onDelete: (sessionId: string) => void;
 }
 
+type DeleteErrorCode =
+  | "SESSION_DELETE_FORBIDDEN"
+  | "SESSION_DELETE_INVALID"
+  | "SESSION_DELETE_UNAVAILABLE"
+  | "SESSION_DELETE_FAILED";
+
+function deleteErrorMessage(t: LocaleStrings, code: string | null): string {
+  switch (code) {
+    case "SESSION_DELETE_FORBIDDEN":
+      return t.deleteSessionForbidden;
+    case "SESSION_DELETE_INVALID":
+      return t.deleteSessionInvalid;
+    case "SESSION_DELETE_UNAVAILABLE":
+      return t.deleteSessionUnavailable;
+    default:
+      return t.deleteSessionFailed;
+  }
+}
+
 export default function SessionHistory({
   t,
   uiLocale,
@@ -35,7 +54,7 @@ export default function SessionHistory({
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState(false);
+  const [deleteErrorCode, setDeleteErrorCode] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   const deleteSession = async (session: SessionSummary) => {
@@ -47,18 +66,28 @@ export default function SessionHistory({
       }),
     );
     if (!confirmed) return;
-    setDeleteError(false);
+    setDeleteErrorCode(null);
     setDeletingId(session.session_id);
     try {
       const response = await fetch(`/api/sessions/${encodeURIComponent(session.session_id)}`, {
         method: "DELETE",
       });
-      if (!response.ok) throw new Error("delete failed");
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { code?: string } | null;
+        const code: DeleteErrorCode =
+          payload?.code === "SESSION_DELETE_FORBIDDEN" ||
+          payload?.code === "SESSION_DELETE_INVALID" ||
+          payload?.code === "SESSION_DELETE_UNAVAILABLE" ||
+          payload?.code === "SESSION_DELETE_FAILED"
+            ? payload.code
+            : "SESSION_DELETE_FAILED";
+        throw new Error(code);
+      }
       setSessions((current) => current.filter((row) => row.session_id !== session.session_id));
       if (session.session_id === currentSessionId) setOpen(false);
       onDelete(session.session_id);
-    } catch {
-      setDeleteError(true);
+    } catch (error) {
+      setDeleteErrorCode(error instanceof Error ? error.message : "SESSION_DELETE_FAILED");
     } finally {
       setDeletingId(null);
     }
@@ -142,8 +171,10 @@ export default function SessionHistory({
               </button>
             </span>
           </div>
-          {deleteError && (
-            <p role="alert" className="mt-3 text-xs text-red-700">{t.deleteSessionFailed}</p>
+          {deleteErrorCode && (
+            <p role="alert" className="mt-3 text-xs text-red-700">
+              {deleteErrorMessage(t, deleteErrorCode)}
+            </p>
           )}
           {loading ? (
             <p className="mt-3 text-xs opacity-60">{t.loading}</p>

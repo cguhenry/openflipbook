@@ -56,7 +56,7 @@ export function BranchBeacons({ beacons, onSelect, t = getStrings("en") }: Props
             e.stopPropagation();
             onSelect(kid.nodeId);
           }}
-          className="group absolute flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
+          className="group absolute z-10 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
           style={{
             left: `${kid.clickInParent.xPct * 100}%`,
             top: `${kid.clickInParent.yPct * 100}%`,

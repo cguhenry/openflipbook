@@ -19,5 +19,6 @@ describe("BranchBeacons", () => {
     expect(html).toContain('title="Branch: Second branch"');
     expect(html).toContain("Second branch");
     expect(html).toContain("h-11 w-11");
+    expect(html).toContain("absolute z-10 flex h-11 w-11");
   });
 });

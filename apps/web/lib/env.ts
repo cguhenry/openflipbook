@@ -1,5 +1,6 @@
 export interface ServerEnv {
   MODAL_API_URL: string | null;
+  FLIPBOOK_NAS_SELF_USE: boolean;
   MONGODB_URI: string | null;
   MONGODB_DB: string | null;
   R2_ACCOUNT_ID: string | null;
@@ -16,6 +17,7 @@ export interface ServerEnv {
 export function readServerEnv(): ServerEnv {
   return {
     MODAL_API_URL: process.env.MODAL_API_URL || null,
+    FLIPBOOK_NAS_SELF_USE: process.env.FLIPBOOK_NAS_SELF_USE === "true",
     MONGODB_URI: process.env.MONGODB_URI || null,
     MONGODB_DB: process.env.MONGODB_DB || null,
     R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID || null,

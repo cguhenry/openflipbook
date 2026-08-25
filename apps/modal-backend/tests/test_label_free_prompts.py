@@ -5,6 +5,7 @@ byte-identical everywhere."""
 from __future__ import annotations
 
 from providers.llm import _render_base_instruction
+from providers.llm.planner import RICH_SCENE_HOTSPOT_POLICY
 from providers.prompt_library.instructions import build_zoom_instruction
 from providers.prompt_library.style import LETTERING_GUARD, NO_LETTERING
 
@@ -52,3 +53,11 @@ def test_zoom_instruction_swaps_lettering_guard() -> None:
     assert NO_LETTERING in free
     # Everything else identical.
     assert base.replace(LETTERING_GUARD, NO_LETTERING) == free
+
+
+def test_rich_scene_policy_and_marker_guard_are_explicit() -> None:
+    assert "prefer 5 to 8 meaningful hotspots" in RICH_SCENE_HOTSPOT_POLICY
+    assert "target 6" in RICH_SCENE_HOTSPOT_POLICY
+    assert "Genuinely sparse scenes may use 2 to 4" in RICH_SCENE_HOTSPOT_POLICY
+    for marker in ("decorative hotspot-like dots", "pins", "target rings", "leader-line markers"):
+        assert marker in NO_LETTERING

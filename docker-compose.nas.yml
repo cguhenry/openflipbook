@@ -49,6 +49,7 @@ services:
         NEXT_PUBLIC_OFFLINE_EXPORT: "1"
         NEXT_PUBLIC_LTX_WS_URL: ""
     environment:
+      FLIPBOOK_NAS_SELF_USE: "true"
       NEXT_PUBLIC_NAS_SLIM: "1"
       NEXT_PUBLIC_VIDEO: "0"
       NEXT_PUBLIC_AI_PREFETCH: "0"

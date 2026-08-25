@@ -31,6 +31,7 @@ describe("readServerEnv", () => {
     vi.stubEnv("R2_ENDPOINT", "x");
     const env = readServerEnv();
     expect(env).toEqual({
+      FLIPBOOK_NAS_SELF_USE: false,
       MODAL_API_URL: "x",
       MONGODB_URI: "x",
       MONGODB_DB: "x",
@@ -41,6 +42,11 @@ describe("readServerEnv", () => {
       R2_PUBLIC_BASE_URL: "x",
       R2_ENDPOINT: "x",
     });
+  });
+
+  it("reads the explicit NAS self-use flag", () => {
+    vi.stubEnv("FLIPBOOK_NAS_SELF_USE", "true");
+    expect(readServerEnv().FLIPBOOK_NAS_SELF_USE).toBe(true);
   });
 
   it("returns nulls when env vars are empty strings", () => {

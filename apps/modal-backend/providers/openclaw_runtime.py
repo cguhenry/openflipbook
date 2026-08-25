@@ -590,7 +590,9 @@ class OpenClawGatewayClient:
             "}\n"
             "Use TextBlock IDs t001, t002, ... matching ^t[0-9]{3,}$ and use "
             "anchor for TextBlock placement. Do not emit bbox inside text_blocks. "
-            "Use 2 to 8 hotspots with IDs h001, h002, ...; every planned hotspot "
+            "Use 2 to 8 hotspots with IDs h001, h002, ...; for a rich scene "
+            "prefer 5 to 8 meaningful hotspots and target 6 when supported; "
+            "genuinely sparse scenes may use 2 to 4. Every planned hotspot "
             "must have label, sub_query, visual_target, and desired_bbox. Every "
             "aligned_hotspots row must have id, actual_bbox, and "
             "alignment_confidence, and aligned IDs must exactly equal PagePlan "
@@ -601,14 +603,17 @@ class OpenClawGatewayClient:
             "prompt must describe the supplied image and explicitly contain the "
             "words 'no text'. The image must not contain empty label boxes, "
             "decorative callout frames, legends, text placeholders, blank "
-            "annotation rectangles, or connector-label placeholders because the "
-            "DOM owns labels. "
+            "annotation rectangles, connector-label placeholders, or decorative "
+            "hotspot-like dots, pins, target rings, leader-line markers, or legend "
+            "markers unless each one represents a planned visual target because "
+            "the DOM owns labels. "
             "Return the single object now."
         )
         user = (
             "Analyze this exact existing image as an OpenFlipbook image seed. "
-            "Preserve its subject and visual language in scene.prompt, identify "
-            "2 to 8 useful visible regions for later tap exploration, and emit "
+            "Preserve its subject and visual language in scene.prompt. For a rich "
+            "scene identify 5 to 8 useful visible regions, targeting 6; for a "
+            "genuinely sparse scene use 2 to 4. Emit "
             "only the strict JSON object required above."
         )
         try:
@@ -650,8 +655,10 @@ class OpenClawGatewayClient:
             "desired_bbox. Never swap ids, infer meaning from list order, or copy a "
             "neighbor's box. Align the actual depicted subject, not an empty label "
             "box, decorative callout frame, legend, blank annotation rectangle, or "
-            "connector-label placeholder. Do not return prose, markdown, or any "
-            "other keys."
+            "connector-label placeholder. Do not add or preserve decorative "
+            "hotspot-like dots, pins, target rings, leader-line markers, or legend "
+            "markers unless each one represents a planned visual target. Do not "
+            "return prose, markdown, or any other keys."
         )
         user = (
             "Planned PagePlan hotspots:\n"

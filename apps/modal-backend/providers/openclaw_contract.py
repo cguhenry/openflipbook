@@ -398,8 +398,8 @@ def validate_page_plan_minimal(plan: dict[str, Any]) -> dict[str, Any]:
         raise OpenClawContractError("scene prompt must explicitly contain 'no text'")
     if len(validated.text_blocks) != 2:
         raise OpenClawContractError("B0 PagePlan must contain exactly 2 text blocks")
-    if len(validated.hotspots) != 3:
-        raise OpenClawContractError("B0 PagePlan must contain exactly 3 hotspots")
+    if not 2 <= len(validated.hotspots) <= 8:
+        raise OpenClawContractError("PagePlan must contain 2 to 8 hotspots")
     return validated.model_dump(mode="json")
 
 

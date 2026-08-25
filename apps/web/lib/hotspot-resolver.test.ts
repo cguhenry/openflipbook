@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AlignedHotspotV1, PagePlanV1 } from "@openflipbook/config";
 import {
   deterministicTapPrefetch,
+  canonicalHotspotRows,
   hotspotIntentAtPoint,
   hotspotIntentById,
   pointInPolygon,
@@ -60,9 +61,13 @@ describe("deterministic hotspot resolver", () => {
     expect(resolveHotspot(plan, aligned, 0.49, 0.5)).toMatchObject({ method: "nearest", planned: { id: "h001" } });
   });
 
-  it("returns null only outside the image or without valid hotspot ids", () => {
+  it("uses planned geometry when aligned rows are absent", () => {
     expect(resolveHotspot(plan, aligned, -0.01, 0.5)).toBeNull();
-    expect(resolveHotspot(plan, [{ ...aligned[0]!, id: "missing" }], 0.2, 0.2)).toBeNull();
+    expect(resolveHotspot(plan, [{ ...aligned[0]!, id: "missing" }], 0.2, 0.2)).toMatchObject({
+      method: "planned_fallback",
+      geometry_source: "planned_fallback",
+      planned: { id: "h001" },
+    });
   });
 
   it("converts a hit into the existing warm-tap fields", () => {
@@ -92,5 +97,53 @@ describe("deterministic hotspot resolver", () => {
         sub_query: hotspot.sub_query,
       });
     }
+  });
+
+  it("keeps all planned ids addressable with desired_bbox fallback", () => {
+    const richPlan: PagePlanV1 = {
+      ...plan,
+      hotspots: Array.from({ length: 8 }, (_, index) => ({
+        id: `h${String(index + 1).padStart(3, "0")}`,
+        label: `區域 ${index + 1}`,
+        sub_query: `區域 ${index + 1} 的作用？`,
+        visual_target: `distinct region ${index + 1}`,
+        desired_bbox: [
+          (index % 4) * 0.24 + 0.02,
+          Math.floor(index / 4) * 0.38 + 0.12,
+          0.18,
+          0.24,
+        ],
+      })),
+    };
+    const richAligned = richPlan.hotspots.slice(0, 5).map((hotspot): AlignedHotspotV1 => ({
+      id: hotspot.id,
+      actual_bbox: hotspot.desired_bbox,
+      tap_region: [
+        [hotspot.desired_bbox[0], hotspot.desired_bbox[1]],
+        [hotspot.desired_bbox[0] + hotspot.desired_bbox[2], hotspot.desired_bbox[1]],
+        [hotspot.desired_bbox[0] + hotspot.desired_bbox[2], hotspot.desired_bbox[1] + hotspot.desired_bbox[3]],
+        [hotspot.desired_bbox[0], hotspot.desired_bbox[1] + hotspot.desired_bbox[3]],
+      ],
+      alignment_confidence: 0.9,
+    }));
+
+    const rows = canonicalHotspotRows(richPlan, richAligned);
+    expect(rows).toHaveLength(8);
+    expect(rows.filter((row) => row.geometry_source === "aligned")).toHaveLength(5);
+    expect(rows.filter((row) => row.geometry_source === "planned_fallback")).toHaveLength(3);
+
+    for (const hotspot of richPlan.hotspots) {
+      expect(hotspotIntentById(richPlan, richAligned, hotspot.id)).toMatchObject({
+        hotspot_id: hotspot.id,
+        sub_query: hotspot.sub_query,
+      });
+    }
+    const fallback = richPlan.hotspots[5]!;
+    const [x, y, width, height] = fallback.desired_bbox;
+    expect(resolveHotspot(richPlan, richAligned, x + width / 2, y + height / 2)).toMatchObject({
+      method: "planned_fallback",
+      geometry_source: "planned_fallback",
+      planned: { id: fallback.id },
+    });
   });
 });

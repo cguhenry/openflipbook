@@ -4,12 +4,25 @@ import type {
   PlannedHotspotV1,
 } from "@openflipbook/config";
 
-export type HotspotResolutionMethod = "tap_region" | "bbox" | "nearest";
+export type HotspotResolutionMethod =
+  | "tap_region"
+  | "bbox"
+  | "planned_fallback"
+  | "nearest";
+
+export type HotspotGeometrySource = "aligned" | "planned_fallback";
+
+export interface CanonicalHotspotRowV1 {
+  planned: PlannedHotspotV1;
+  aligned: AlignedHotspotV1;
+  geometry_source: HotspotGeometrySource;
+}
 
 export interface HotspotHitV1 {
   planned: PlannedHotspotV1;
   aligned: AlignedHotspotV1;
   method: HotspotResolutionMethod;
+  geometry_source: HotspotGeometrySource;
 }
 
 /** The single deterministic semantic intent shared by label and pixel taps. */
@@ -23,6 +36,7 @@ export interface HotspotIntentV1 {
   tap_region: AlignedHotspotV1["tap_region"];
   alignment_confidence: number;
   method: HotspotResolutionMethod;
+  geometry_source: HotspotGeometrySource;
 }
 
 const EPS = 1e-9;
@@ -87,16 +101,49 @@ function centerDistance2(
   return dx * dx + dy * dy;
 }
 
-function candidateRows(pagePlan: PagePlanV1, aligned: readonly AlignedHotspotV1[]) {
-  const planned = new Map(pagePlan.hotspots.map((h) => [h.id, h] as const));
-  return aligned
-    .map((a) => ({ aligned: a, planned: planned.get(a.id) }))
-    .filter((row): row is { aligned: AlignedHotspotV1; planned: PlannedHotspotV1 } => Boolean(row.planned));
+function fallbackTapRegion(
+  bbox: PlannedHotspotV1["desired_bbox"],
+): AlignedHotspotV1["tap_region"] {
+  const [x, y, width, height] = bbox;
+  return [
+    [x, y],
+    [x + width, y],
+    [x + width, y + height],
+    [x, y + height],
+  ];
+}
+
+/** Build one geometry row for every planned hotspot, including legacy fallback rows. */
+export function canonicalHotspotRows(
+  pagePlan: PagePlanV1,
+  aligned: readonly AlignedHotspotV1[],
+): CanonicalHotspotRowV1[] {
+  const alignedById = new Map(aligned.map((row) => [row.id, row] as const));
+  return pagePlan.hotspots.map((planned) => {
+    const alignedRow = alignedById.get(planned.id);
+    if (alignedRow) {
+      return {
+        planned,
+        aligned: alignedRow,
+        geometry_source: "aligned",
+      };
+    }
+    return {
+      planned,
+      aligned: {
+        id: planned.id,
+        actual_bbox: planned.desired_bbox,
+        tap_region: fallbackTapRegion(planned.desired_bbox),
+        alignment_confidence: 0,
+      },
+      geometry_source: "planned_fallback",
+    };
+  });
 }
 
 function stableConfidenceOrder(
-  a: { aligned: AlignedHotspotV1 },
-  b: { aligned: AlignedHotspotV1 },
+  a: CanonicalHotspotRowV1,
+  b: CanonicalHotspotRowV1,
 ): number {
   return (
     b.aligned.alignment_confidence - a.aligned.alignment_confidence ||
@@ -112,18 +159,24 @@ export function resolveHotspot(
   y: number,
 ): HotspotHitV1 | null {
   if (!inUnit(x) || !inUnit(y)) return null;
-  const rows = candidateRows(pagePlan, aligned);
-  if (rows.length === 0) return null;
+  const rows = canonicalHotspotRows(pagePlan, aligned);
+  const alignedRows = rows.filter((row) => row.geometry_source === "aligned");
+  const fallbackRows = rows.filter((row) => row.geometry_source === "planned_fallback");
 
-  const region = rows
+  const region = alignedRows
     .filter((r) => pointInPolygon(x, y, r.aligned.tap_region))
     .sort(stableConfidenceOrder)[0];
   if (region) return { ...region, method: "tap_region" };
 
-  const bbox = rows
+  const bbox = alignedRows
     .filter((r) => bboxContains(r.aligned.actual_bbox, x, y))
     .sort(stableConfidenceOrder)[0];
   if (bbox) return { ...bbox, method: "bbox" };
+
+  const fallback = fallbackRows
+    .filter((r) => bboxContains(r.aligned.actual_bbox, x, y))
+    .sort(stableConfidenceOrder)[0];
+  if (fallback) return { ...fallback, method: "planned_fallback" };
 
   const nearest = [...rows].sort((a, b) => {
     const da = centerDistance2(a.aligned.actual_bbox, x, y);
@@ -157,6 +210,7 @@ function intentFromHit(
     tap_region: hit.aligned.tap_region,
     alignment_confidence: hit.aligned.alignment_confidence,
     method: hit.method,
+    geometry_source: hit.geometry_source,
   };
 }
 
@@ -166,12 +220,16 @@ export function hotspotIntentById(
   aligned: readonly AlignedHotspotV1[],
   hotspotId: string,
 ): HotspotIntentV1 | null {
-  const planned = pagePlan.hotspots.find((hotspot) => hotspot.id === hotspotId);
-  const alignedRow = aligned.find((hotspot) => hotspot.id === hotspotId);
-  if (!planned || !alignedRow) return null;
+  const row = canonicalHotspotRows(pagePlan, aligned).find(
+    (candidate) => candidate.planned.id === hotspotId,
+  );
+  if (!row) return null;
   return intentFromHit(
-    { planned, aligned: alignedRow, method: "bbox" },
-    activationPoint(alignedRow),
+    {
+      ...row,
+      method: row.geometry_source === "aligned" ? "bbox" : "planned_fallback",
+    },
+    activationPoint(row.aligned),
   );
 }
 

@@ -9,6 +9,22 @@ import { requireOwner } from "@/lib/session-owner";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type SessionDeleteCode =
+  | "SESSION_DELETE_OK"
+  | "SESSION_DELETE_INVALID"
+  | "SESSION_DELETE_UNAVAILABLE"
+  | "SESSION_DELETE_FORBIDDEN"
+  | "SESSION_DELETE_FAILED"
+  | "SESSION_DELETE_IMAGE_CLEANUP_WARNING";
+
+function deleteError(
+  code: Exclude<SessionDeleteCode, "SESSION_DELETE_OK" | "SESSION_DELETE_IMAGE_CLEANUP_WARNING">,
+  error: string,
+  status: number,
+) {
+  return NextResponse.json({ code, error }, { status });
+}
+
 interface Params {
   params: Promise<{ id: string }>;
 }
@@ -69,14 +85,26 @@ export async function GET(req: Request, { params }: Params) {
 export async function DELETE(_req: Request, { params }: Params) {
   const { id } = await params;
   if (!isSafeId(id)) {
-    return NextResponse.json({ error: "invalid session id" }, { status: 400 });
+    return deleteError("SESSION_DELETE_INVALID", "invalid session id", 400);
   }
   const env = readServerEnv();
   if (!env.MONGODB_URI || !env.MONGODB_DB) {
-    return NextResponse.json({ error: "persistence not configured" }, { status: 503 });
+    return deleteError(
+      "SESSION_DELETE_UNAVAILABLE",
+      "persistence not configured",
+      503,
+    );
   }
-  const owner = await requireOwner(id);
-  if (!owner.ok) return owner.res;
+  if (!env.FLIPBOOK_NAS_SELF_USE) {
+    const owner = await requireOwner(id);
+    if (!owner.ok) {
+      return deleteError(
+        "SESSION_DELETE_FORBIDDEN",
+        "this session belongs to another browser",
+        403,
+      );
+    }
+  }
 
   try {
     const rows: Awaited<ReturnType<typeof listNodesBySession>>["rows"] = [];
@@ -95,12 +123,15 @@ export async function DELETE(_req: Request, { params }: Params) {
       imageCleanupFailed = true;
     }
     return NextResponse.json({
+      code: imageCleanupFailed
+        ? "SESSION_DELETE_IMAGE_CLEANUP_WARNING"
+        : "SESSION_DELETE_OK",
       deleted_session_id: id,
       deleted_nodes: deleted.deleted_nodes,
       deleted_images: imageKeys.length,
       image_cleanup_failed: imageCleanupFailed,
     });
   } catch {
-    return NextResponse.json({ error: "session delete failed" }, { status: 500 });
+    return deleteError("SESSION_DELETE_FAILED", "session delete failed", 500);
   }
 }
