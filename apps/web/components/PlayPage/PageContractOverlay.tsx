@@ -35,7 +35,79 @@ export interface PageContractOverlayProps {
   /** Pixel rect of the actual object-fit:contain image inside the figure. */
   imageRect?: { offsetX: number; offsetY: number; width: number; height: number } | null;
   showHotspots?: boolean;
+  onHotspotActivate?: (hotspotId: string) => void;
   t?: LocaleStrings;
+}
+
+interface HotspotLabelLayout {
+  left: number;
+  top: number;
+  transform: string;
+}
+
+function clampUnit(value: number): number {
+  return Math.min(0.97, Math.max(0.03, value));
+}
+
+function labelApproxWidth(label: string): number {
+  return Math.min(0.36, Math.max(0.14, 0.08 + label.length * 0.018));
+}
+
+function boxesOverlap(
+  a: { left: number; top: number; width: number; height: number },
+  b: { left: number; top: number; width: number; height: number },
+): boolean {
+  return a.left < b.left + b.width && a.left + a.width > b.left &&
+    a.top < b.top + b.height && a.top + a.height > b.top;
+}
+
+/** Compact, collision-aware label anchors around the aligned object boxes. */
+export function hotspotLabelLayout(
+  pagePlan: PagePlanV1,
+  alignedHotspots: readonly AlignedHotspotV1[],
+): Map<string, HotspotLabelLayout> {
+  const planned = new Map(pagePlan.hotspots.map((hotspot) => [hotspot.id, hotspot] as const));
+  const used: { left: number; top: number; width: number; height: number }[] = [];
+  const layouts = new Map<string, HotspotLabelLayout>();
+  const rows = alignedHotspots
+    .map((aligned) => ({ aligned, planned: planned.get(aligned.id) }))
+    .filter((row): row is { aligned: AlignedHotspotV1; planned: PagePlanV1["hotspots"][number] } =>
+      Boolean(row.planned?.label.trim()),
+    )
+    .sort((a, b) => a.aligned.actual_bbox[1] - b.aligned.actual_bbox[1] || a.aligned.id.localeCompare(b.aligned.id));
+
+  for (const [index, row] of rows.entries()) {
+    const [x, y, w, h] = row.aligned.actual_bbox;
+    const width = labelApproxWidth(row.planned.label);
+    const height = 0.065;
+    const centerX = clampUnit(x + w / 2);
+    const centerY = clampUnit(y + h / 2);
+    const candidates = [
+      { left: centerX, top: clampUnit(y + h + 0.018), transform: "translate(-50%, 0)" },
+      { left: centerX, top: clampUnit(y - 0.018), transform: "translate(-50%, -100%)" },
+      { left: clampUnit(x + w + 0.018), top: centerY, transform: "translate(0, -50%)" },
+      { left: clampUnit(x - 0.018), top: centerY, transform: "translate(-100%, -50%)" },
+    ];
+    const chosen = candidates.find((candidate) => {
+      const left = candidate.transform.includes("-100%") ? candidate.left - width :
+        candidate.transform.includes("-50%") ? candidate.left - width / 2 : candidate.left;
+      const top = candidate.transform.includes("-100%") ? candidate.top - height :
+        candidate.transform.includes("-50%") ? candidate.top - height / 2 : candidate.top;
+      const box = { left, top, width, height };
+      return !used.some((other) => boxesOverlap(box, other));
+    }) ?? {
+      left: centerX,
+      top: clampUnit(y + h + 0.018 + (index % 4) * 0.07),
+      transform: "translate(-50%, 0)",
+    };
+    const left = chosen.transform.includes("-100%") ? chosen.left - width :
+      chosen.transform.includes("-50%") ? chosen.left - width / 2 : chosen.left;
+    const top = chosen.transform.includes("-100%") ? chosen.top - height :
+      chosen.transform.includes("-50%") ? chosen.top - height / 2 : chosen.top;
+    used.push({ left, top, width, height });
+    layouts.set(row.aligned.id, chosen);
+  }
+  return layouts;
 }
 
 export function PageContractOverlay({
@@ -43,6 +115,7 @@ export function PageContractOverlay({
   alignedHotspots = [],
   imageRect,
   showHotspots = false,
+  onHotspotActivate,
   t = getStrings("en"),
 }: PageContractOverlayProps) {
   const frameStyle: CSSProperties | undefined = imageRect
@@ -80,24 +153,36 @@ export function PageContractOverlay({
         </div>
       ))}
 
-      {showHotspots && alignedHotspots.map((hotspot) => {
-        const [x, y, w, h] = hotspot.actual_bbox;
-        const planned = pagePlan.hotspots.find((candidate) => candidate.id === hotspot.id);
-        return (
-          <div
-            key={hotspot.id}
-            data-hotspot-id={hotspot.id}
-            className="absolute rounded-md border border-dashed border-amber-500/60 bg-amber-200/10"
-            style={{ left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` }}
-          >
-            {planned && (
-              <span className="absolute left-1 top-1 rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white">
-                {planned.label}
-              </span>
-            )}
-          </div>
-        );
-      })}
+      {showHotspots && (() => {
+        const layouts = hotspotLabelLayout(pagePlan, alignedHotspots);
+        return alignedHotspots.map((hotspot) => {
+          const planned = pagePlan.hotspots.find((candidate) => candidate.id === hotspot.id);
+          const layout = layouts.get(hotspot.id);
+          if (!planned || !layout || !planned.label.trim()) return null;
+          return (
+            <button
+              key={hotspot.id}
+              type="button"
+              data-hotspot-label="true"
+              data-hotspot-id={hotspot.id}
+              aria-label={planned.label}
+              title={planned.label}
+              onClick={(event) => {
+                event.stopPropagation();
+                onHotspotActivate?.(hotspot.id);
+              }}
+              className="pointer-events-auto absolute z-[1] max-w-[36%] -translate-y-0 rounded-md border border-amber-200/80 bg-black/75 px-2 py-1 text-left text-[clamp(.68rem,1.45vw,.95rem)] font-medium leading-tight text-white shadow-md backdrop-blur-sm hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-amber-300"
+              style={{
+                left: `${layout.left * 100}%`,
+                top: `${layout.top * 100}%`,
+                transform: layout.transform,
+              }}
+            >
+              {planned.label}
+            </button>
+          );
+        });
+      })()}
     </div>
   );
 }

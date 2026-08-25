@@ -1,5 +1,6 @@
 import {
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadBucketCommand,
   PutObjectCommand,
@@ -112,6 +113,29 @@ export async function putStoredBytesCreateOnly(
 export async function deleteStoredObject(key: string): Promise<void> {
   const { s3, bucket } = r2Client();
   await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+}
+
+export function uniqueStoredKeys(keys: readonly string[]): string[] {
+  return [...new Set(keys.filter((key) => typeof key === "string" && key.length > 0))];
+}
+
+/** Best-effort batch cleanup after Mongo has committed a session deletion. */
+export async function deleteStoredObjects(keys: readonly string[]): Promise<void> {
+  const unique = uniqueStoredKeys(keys);
+  if (unique.length === 0) return;
+  const { s3, bucket } = r2Client();
+  for (let offset = 0; offset < unique.length; offset += 1000) {
+    const chunk = unique.slice(offset, offset + 1000);
+    const result = await s3.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: { Objects: chunk.map((Key) => ({ Key })), Quiet: true },
+      }),
+    );
+    if (result.Errors?.length) {
+      throw new Error(`object cleanup failed for ${result.Errors.length} image(s)`);
+    }
+  }
 }
 
 export function decodeDataUrl(dataUrl: string): {

@@ -599,7 +599,10 @@ class OpenClawGatewayClient:
             "[]. Explicitly forbid MotionHint fields target_id and hint; do not "
             "emit tap_region because the application derives it locally. The scene "
             "prompt must describe the supplied image and explicitly contain the "
-            "words 'no text'. "
+            "words 'no text'. The image must not contain empty label boxes, "
+            "decorative callout frames, legends, text placeholders, blank "
+            "annotation rectangles, or connector-label placeholders because the "
+            "DOM owns labels. "
             "Return the single object now."
         )
         user = (
@@ -643,12 +646,19 @@ class OpenClawGatewayClient:
             "Return exactly one JSON object with key hotspots. Include exactly one row "
             "for every requested id, with id, bbox [x,y,width,height] and confidence. "
             "All bbox values are normalized 0..1, positive, and fully contained. "
-            "Do not return prose, markdown, or any other keys."
+            "Match each row to its own planned id using that row's visual_target and "
+            "desired_bbox. Never swap ids, infer meaning from list order, or copy a "
+            "neighbor's box. Align the actual depicted subject, not an empty label "
+            "box, decorative callout frame, legend, blank annotation rectangle, or "
+            "connector-label placeholder. Do not return prose, markdown, or any "
+            "other keys."
         )
         user = (
             "Planned PagePlan hotspots:\n"
             f"{_json_for_prompt(hotspot_rows)}\n\n"
-            f"Expected ids in this exact set: {_json_for_prompt(expected_ids)}"
+            f"Expected ids in this exact set: {_json_for_prompt(expected_ids)}\n\n"
+            "For every id, use only its own visual_target and desired_bbox as the "
+            "semantic reference. Preserve the id-to-subject mapping exactly."
         )
         try:
             raw = await self.responses_json(

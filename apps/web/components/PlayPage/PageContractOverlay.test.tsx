@@ -44,4 +44,24 @@ describe("PageContractOverlay", () => {
     expect(textBlockClass(plan.text_blocks[0]!)).toContain("min(84%,34rem)");
     expect(textBlockClass(plan.text_blocks[1]!)).toContain("leading-snug");
   });
+
+  it("renders non-empty first-class hotspot labels with exact ids", () => {
+    const html = renderToStaticMarkup(
+      <PageContractOverlay
+        pagePlan={plan}
+        alignedHotspots={[
+          { id: "h001", actual_bbox: [0.4, 0.25, 0.25, 0.45], tap_region: [[0.4, 0.25], [0.65, 0.25], [0.65, 0.7], [0.4, 0.7]], alignment_confidence: 0.95 },
+          { id: "h002", actual_bbox: [0.7, 0.25, 0.2, 0.5], tap_region: [[0.7, 0.25], [0.9, 0.25], [0.9, 0.75], [0.7, 0.75]], alignment_confidence: 0.9 },
+        ]}
+        showHotspots
+      />,
+    );
+    expect((html.match(/data-hotspot-label="true"/g) ?? []).length).toBe(2);
+    expect(html).toContain('data-hotspot-id="h001"');
+    expect(html).toContain('data-hotspot-id="h002"');
+    expect(html).toContain('aria-label="活塞"');
+    expect(html).toContain('aria-label="飛輪"');
+    expect(html).toContain(">活塞</button>");
+    expect(html).toContain(">飛輪</button>");
+  });
 });

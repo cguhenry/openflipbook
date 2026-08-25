@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { LocaleStrings, SupportedUiLocale } from "@/lib/i18n";
+import { formatUi, type LocaleStrings, type SupportedUiLocale } from "@/lib/i18n";
 
 interface SessionSummary {
   session_id: string;
@@ -19,6 +19,7 @@ interface Props {
   currentSessionId: string;
   onNewSession: () => void;
   onResume: (sessionId: string) => void;
+  onDelete: (sessionId: string) => void;
 }
 
 export default function SessionHistory({
@@ -27,12 +28,41 @@ export default function SessionHistory({
   currentSessionId,
   onNewSession,
   onResume,
+  onDelete,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
+
+  const deleteSession = async (session: SessionSummary) => {
+    if (deletingId) return;
+    const confirmed = window.confirm(
+      formatUi(t.deleteSessionConfirm, {
+        title: session.title,
+        count: session.node_count,
+      }),
+    );
+    if (!confirmed) return;
+    setDeleteError(false);
+    setDeletingId(session.session_id);
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(session.session_id)}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error("delete failed");
+      setSessions((current) => current.filter((row) => row.session_id !== session.session_id));
+      if (session.session_id === currentSessionId) setOpen(false);
+      onDelete(session.session_id);
+    } catch {
+      setDeleteError(true);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -112,6 +142,9 @@ export default function SessionHistory({
               </button>
             </span>
           </div>
+          {deleteError && (
+            <p role="alert" className="mt-3 text-xs text-red-700">{t.deleteSessionFailed}</p>
+          )}
           {loading ? (
             <p className="mt-3 text-xs opacity-60">{t.loading}</p>
           ) : loadError ? (
@@ -124,23 +157,35 @@ export default function SessionHistory({
                 const current = session.session_id === currentSessionId;
                 return (
                   <li key={session.session_id}>
-                    <button
-                      type="button"
-                      aria-current={current ? "page" : undefined}
-                      onClick={() => onResume(session.session_id)}
-                      className="flex min-h-11 w-full items-start justify-between gap-3 rounded-lg border border-transparent px-2.5 py-2 text-left hover:border-[var(--color-ink)]/20 hover:bg-[var(--color-ink)]/5"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium">
-                          {current ? "● " : ""}{session.title}
+                    <div className="flex items-stretch gap-1.5">
+                      <button
+                        type="button"
+                        aria-current={current ? "page" : undefined}
+                        onClick={() => onResume(session.session_id)}
+                        className="flex min-h-11 min-w-0 flex-1 items-start justify-between gap-3 rounded-lg border border-transparent px-2.5 py-2 text-left hover:border-[var(--color-ink)]/20 hover:bg-[var(--color-ink)]/5"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium">
+                            {current ? "● " : ""}{session.title}
+                          </span>
+                          <span className="mt-0.5 block text-[11px] opacity-60">
+                            {new Date(session.updated_at).toLocaleString(uiLocale === "auto" ? undefined : uiLocale)} · {session.node_count} {session.node_count === 1 ? t.pageSingular : t.pagePlural} · {session.branch_count} {session.branch_count === 1 ? t.branchSingular : t.branchPlural}
+                            {session.has_image_seed ? ` · ${t.imageSeed}` : ""}
+                          </span>
                         </span>
-                        <span className="mt-0.5 block text-[11px] opacity-60">
-                          {new Date(session.updated_at).toLocaleString(uiLocale === "auto" ? undefined : uiLocale)} · {session.node_count} {session.node_count === 1 ? t.pageSingular : t.pagePlural} · {session.branch_count} {session.branch_count === 1 ? t.branchSingular : t.branchPlural}
-                          {session.has_image_seed ? ` · ${t.imageSeed}` : ""}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-[11px] opacity-55">{t.resume}</span>
-                    </button>
+                        <span className="shrink-0 text-[11px] opacity-55">{t.resume}</span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`${t.deleteSession}: ${session.title}`}
+                        aria-busy={deletingId === session.session_id}
+                        disabled={deletingId !== null}
+                        onClick={() => void deleteSession(session)}
+                        className="min-h-11 shrink-0 rounded-lg border border-red-300/60 px-2.5 text-[11px] text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {deletingId === session.session_id ? t.deletingSession : t.deleteSession}
+                      </button>
+                    </div>
                   </li>
                 );
               })}

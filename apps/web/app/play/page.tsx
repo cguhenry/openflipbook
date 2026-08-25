@@ -158,7 +158,12 @@ import { findExplicitChild } from "@/lib/session-graph";
 import { useImageMorph } from "@/hooks/useImageMorph";
 import { PRODUCT_FLAGS } from "@/lib/product-flags";
 import PageContractOverlay from "@/components/PlayPage/PageContractOverlay";
-import { deterministicTapPrefetch, resolveHotspot } from "@/lib/hotspot-resolver";
+import {
+  deterministicTapPrefetchFromIntent,
+  hotspotIntentAtPoint,
+  hotspotIntentById,
+  type HotspotIntentV1,
+} from "@/lib/hotspot-resolver";
 import { reducedMotion, runPageViewTransition } from "@/lib/page-transition";
 import {
   createGeneration,
@@ -738,6 +743,10 @@ export default function PlayPage() {
   // double-click can pass the `phase === "generating"` check twice and start
   // two overlapping generates.
   const clickInFlightRef = useRef(false);
+  // A DOM hotspot label supplies an exact semantic id to the shared image-click
+  // path. The ref bridges the label event to the native image listener without
+  // asking the resolver to infer a neighboring region from coordinates.
+  const semanticIntentRef = useRef<HotspotIntentV1 | null>(null);
   // One-shot render_mode pin from the context menu's "🔍 Zoom in here": set
   // just before its synthetic dispatchTapAt, consumed (and cleared) at the
   // top of the tap handler — so wander and normal taps can never inherit it,
@@ -1323,6 +1332,11 @@ export default function PlayPage() {
           }),
         }).catch(() => {});
       } finally {
+        if (body.mode === "tap") {
+          // A tap owns the re-entry guard until its fetch/SSE lifecycle ends,
+          // including HTTP, SSE, AbortError, and provider failures.
+          clickInFlightRef.current = false;
+        }
         if (activeGenerationRef.current?.generationId === active.generationId) {
           activeGenerationRef.current = null;
         }
@@ -1333,6 +1347,7 @@ export default function PlayPage() {
 
   const stopActiveGeneration = useCallback(() => {
     const active = activeGenerationRef.current;
+    clickInFlightRef.current = false;
     if (!active) return;
     // Invalidate the reader immediately so a late final cannot update the UI;
     // stopGeneration then notifies the backend before aborting the fetch.
@@ -1592,23 +1607,67 @@ export default function PlayPage() {
       e.preventDefault();
       const q = input.trim();
       if (!q) return;
+      // In NAS, toolbar submit is a new independent root even when the
+      // visible page came from History. Allocate and pass the id synchronously;
+      // do not wait for React's setSessionId before dispatching the request.
+      const nextSessionId = newSessionId();
+      stopActiveGeneration();
+      abortRef.current?.abort();
+      abortRef.current = null;
+      closeBloom();
+      streamRef.current?.close();
+      streamRef.current = null;
+      setStreamStatus("off");
+      setShowVideo(false);
+      activeGenerationRef.current = null;
+      lastGenerateRef.current = null;
+      erroredWhileHiddenRef.current = false;
+      clickInFlightRef.current = false;
+      semanticIntentRef.current = null;
+      precomputedRef.current.clear();
+      setSessionId(nextSessionId);
+      setPage(null);
+      setHistory({ items: [], trail: [], trailIdx: -1 });
+      setPhase("idle");
+      setError(null);
+      setStatusMsg(null);
+      setGenerationNotice(null);
+      setSessionSpend(null);
+      setViewMode("page");
+      setMorphFx(null);
+      setProgressiveDraft(false);
+      setClickRipple(null);
+      setBlankTap(null);
+      setHoverPos(null);
+      setStrokeState(null);
+      setEditMode(false);
+      setEditRegion(null);
+      setEditDragRect(null);
+      setEditVerdictChip(null);
+      setScrubberOpen(false);
+      setQuickbarOpen(false);
+      setHelpOpen(false);
+      setCodexOpen(false);
+      const url = new URL(window.location.href);
+      url.pathname = "/play";
+      url.search = `?session=${encodeURIComponent(nextSessionId)}`;
+      window.history.replaceState({}, "", url.toString());
       void generate({
         query: q,
         aspect_ratio: "16:9",
         web_search: true,
-        session_id: sessionId,
-        current_node_id: page?.nodeId ?? "",
+        session_id: nextSessionId,
+        current_node_id: "",
         mode: "query",
         image_tier: requestImageTier,
         ...loopWire,
         ...(devModel ? { image_model: devModel } : {}),
         output_locale: resolveOutputLocale(outputLocale),
-        ...(styleAnchor ? { session_style_anchor: styleAnchor.style } : {}),
         // DOM-labels mode: the root map renders text-free; names overlay.
         ...(worldEnabled && worldDomLabels ? { suppress_map_labels: true } : {}),
       });
     },
-    [input, sessionId, page, generate, requestImageTier, loopWire, devModel, outputLocale, styleAnchor, worldEnabled, worldDomLabels]
+    [input, generate, requestImageTier, loopWire, devModel, outputLocale, worldEnabled, worldDomLabels, stopActiveGeneration, closeBloom]
   );
 
   // B1 — "Describe a place": turn the input description into a logical object
@@ -1865,6 +1924,30 @@ export default function PlayPage() {
     );
   }, []);
 
+  const dispatchHotspotLabel = useCallback((hotspotId: string) => {
+    if (!page?.pagePlan || !page.alignedHotspots?.length) return;
+    const intent = hotspotIntentById(page.pagePlan, page.alignedHotspots, hotspotId);
+    const img = imgRef.current;
+    if (!intent || !img) return;
+    const rect = img.getBoundingClientRect();
+    const content = objectContainRect(
+      rect.width,
+      rect.height,
+      img.naturalWidth,
+      img.naturalHeight,
+    );
+    if (!content) return;
+    semanticIntentRef.current = intent;
+    img.dispatchEvent(
+      new MouseEvent("click", {
+        clientX: rect.left + content.offsetX + intent.activation_point.x_pct * content.width,
+        clientY: rect.top + content.offsetY + intent.activation_point.y_pct * content.height,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }, [page]);
+
   // Wander (auto-explore): reuse the ranked precompute candidates + the tap flow
   // to let the world explore itself, hands-free. Toggled by the ▶ button.
   const stopWander = useCallback((reason?: WanderStopReason) => {
@@ -2109,6 +2192,8 @@ export default function PlayPage() {
     setError(null);
     setStatusMsg(null);
     setMorphFx(null);
+    clickInFlightRef.current = false;
+    semanticIntentRef.current = null;
     abortRef.current?.abort();
     if (target.nodeId) {
       const url = new URL(window.location.href);
@@ -2153,6 +2238,8 @@ export default function PlayPage() {
       setError(null);
       setStatusMsg(null);
       setMorphFx(null);
+      clickInFlightRef.current = false;
+      semanticIntentRef.current = null;
       abortRef.current?.abort();
       if (target.nodeId) {
         const url = new URL(window.location.href);
@@ -2572,6 +2659,8 @@ export default function PlayPage() {
     };
 
     const handler = async (evt: MouseEvent) => {
+      const semanticIntent = semanticIntentRef.current;
+      semanticIntentRef.current = null;
       // "🔍 Zoom in here" pin: read + clear FIRST, whatever happens next — a
       // guard return, a cancelled hint, or a failed generate must never leak
       // the pinned mode into the NEXT tap. dispatchEvent runs this handler
@@ -2749,17 +2838,17 @@ export default function PlayPage() {
       // a tap that is KNOWN to zoom-continue earns the push-in — anything else
       // gets the honest shimmer). Skip when a hint is present (the prefetch was
       // resolved without the user's note) or in World Mode (backend classifies).
-      const deterministicHit =
-        PRODUCT_FLAGS.deterministicHitmap &&
+      const deterministicIntent =
         !hint &&
         !worldEnabled &&
         page.pagePlan &&
         page.alignedHotspots?.length
-          ? resolveHotspot(page.pagePlan, page.alignedHotspots, click.x_pct, click.y_pct)
+          ? semanticIntent ??
+            (PRODUCT_FLAGS.deterministicHitmap
+              ? hotspotIntentAtPoint(page.pagePlan, page.alignedHotspots, click.x_pct, click.y_pct)
+              : null)
           : null;
-      const sourceHotspotId = deterministicHit?.planned.sub_query.trim()
-        ? deterministicHit.planned.id
-        : null;
+      const sourceHotspotId = deterministicIntent?.hotspot_id ?? null;
       if (sourceHotspotId && currentNodeId) {
         const existingChildId = findExplicitChild(
           history.items.flatMap((item) =>
@@ -2780,17 +2869,17 @@ export default function PlayPage() {
           return;
         }
       }
-      const cached: PrefetchEntry | undefined = deterministicHit
-        ? deterministicTapPrefetch(deterministicHit)
+      const cached: PrefetchEntry | undefined = deterministicIntent
+        ? deterministicTapPrefetchFromIntent(deterministicIntent)
         : hint || worldEnabled
           ? undefined
           : cache.get(bucketKey(currentNodeId, click.x_pct, click.y_pct));
-      const legacyCached = deterministicHit ? undefined : cached;
-      if (deterministicHit) {
+      const legacyCached = deterministicIntent ? undefined : cached;
+      if (deterministicIntent) {
         hudEmit("hitmap:resolve", {
-          hotspot_id: deterministicHit.planned.id,
-          method: deterministicHit.method,
-          confidence: deterministicHit.aligned.alignment_confidence,
+          hotspot_id: deterministicIntent.hotspot_id,
+          method: deterministicIntent.method,
+          confidence: deterministicIntent.alignment_confidence,
         });
       }
       const willZoom =
@@ -2830,7 +2919,7 @@ export default function PlayPage() {
       });
       hudEmit("morph:start", { ox: diveOx, oy: diveOy, t: nowMs() });
       let annotated = currentImage;
-      if (!deterministicHit) {
+      if (!deterministicIntent) {
         try {
           annotated = await annotateClickPoint(
             currentImage,
@@ -2845,7 +2934,7 @@ export default function PlayPage() {
       // HUD visibility for the silent hover warming (UI_AUDIT #10): count
       // only clicks where the shortcut was eligible — a deliberate skip
       // (hint / world mode) is neither a hit nor a miss.
-      if (!hint && !worldEnabled && !deterministicHit) {
+      if (!hint && !worldEnabled && !deterministicIntent) {
         hudEmit(legacyCached ? "prefetch:hit" : "prefetch:miss", {});
       }
       // Smarter taps: the resolver confidently flagged this spot as empty
@@ -3006,9 +3095,7 @@ export default function PlayPage() {
             )
           : null;
       void generate({
-        query: sourceHotspotId
-          ? deterministicHit!.planned.sub_query
-          : page.query,
+        query: deterministicIntent?.sub_query ?? page.query,
         aspect_ratio: "16:9",
         web_search: true,
         session_id: page.sessionId,
@@ -3476,6 +3563,8 @@ export default function PlayPage() {
       inflight.forEach((ac) => ac.abort());
       inflight.clear();
       prefetchCurrentKeyRef.current = null;
+      clickInFlightRef.current = false;
+      semanticIntentRef.current = null;
     };
   }, [page, phase, generate, requestImageTier, loopWire, devModel, editMode, outputLocale, bucketKey, streamStatus, styleAnchor, promptForHint, worldEnabled, worldAutonomy, history, selectFromMap]);
 
@@ -3532,6 +3621,7 @@ export default function PlayPage() {
     lastGenerateRef.current = null;
     erroredWhileHiddenRef.current = false;
     clickInFlightRef.current = false;
+    semanticIntentRef.current = null;
     precomputedRef.current.clear();
     const nextSessionId = newSessionId();
     setSessionId(nextSessionId);
@@ -3679,6 +3769,9 @@ export default function PlayPage() {
           uiLocale={uiLocale}
           currentSessionId={sessionId}
           onNewSession={startNewSession}
+          onDelete={(id) => {
+            if (id === sessionId) startNewSession();
+          }}
           onResume={(id) => {
             window.location.assign(`/play?continue=${encodeURIComponent(id)}`);
           }}
@@ -4009,12 +4102,13 @@ export default function PlayPage() {
                   }}
                 />
               )}
-              {page.pagePlan && (PRODUCT_FLAGS.domLabels || page.seedType === "image") && (
+              {page.pagePlan && (PRODUCT_FLAGS.nasSlim || PRODUCT_FLAGS.domLabels || page.seedType === "image") && (
                 <PageContractOverlay
                   pagePlan={page.pagePlan}
                   alignedHotspots={page.alignedHotspots ?? []}
                   imageRect={containRect}
-                  showHotspots={false}
+                  showHotspots
+                  onHotspotActivate={dispatchHotspotLabel}
                   t={t}
                 />
               )}

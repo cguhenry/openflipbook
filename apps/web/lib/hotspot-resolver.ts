@@ -12,6 +12,19 @@ export interface HotspotHitV1 {
   method: HotspotResolutionMethod;
 }
 
+/** The single deterministic semantic intent shared by label and pixel taps. */
+export interface HotspotIntentV1 {
+  hotspot_id: string;
+  label: string;
+  sub_query: string;
+  visual_target: string;
+  activation_point: { x_pct: number; y_pct: number };
+  aligned_bbox: AlignedHotspotV1["actual_bbox"];
+  tap_region: AlignedHotspotV1["tap_region"];
+  alignment_confidence: number;
+  method: HotspotResolutionMethod;
+}
+
 const EPS = 1e-9;
 
 function inUnit(v: number): boolean {
@@ -120,6 +133,59 @@ export function resolveHotspot(
   return { ...nearest, method: "nearest" };
 }
 
+function activationPoint(aligned: AlignedHotspotV1): { x_pct: number; y_pct: number } {
+  const [x, y, w, h] = aligned.actual_bbox;
+  return {
+    x_pct: Math.min(1, Math.max(0, x + w / 2)),
+    y_pct: Math.min(1, Math.max(0, y + h / 2)),
+  };
+}
+
+function intentFromHit(
+  hit: HotspotHitV1,
+  point: { x_pct: number; y_pct: number },
+): HotspotIntentV1 | null {
+  const subQuery = hit.planned.sub_query.trim();
+  if (!subQuery) return null;
+  return {
+    hotspot_id: hit.planned.id,
+    label: hit.planned.label,
+    sub_query: subQuery,
+    visual_target: hit.planned.visual_target,
+    activation_point: point,
+    aligned_bbox: hit.aligned.actual_bbox,
+    tap_region: hit.aligned.tap_region,
+    alignment_confidence: hit.aligned.alignment_confidence,
+    method: hit.method,
+  };
+}
+
+/** Resolve a DOM label by its id. Never falls back to a neighboring hotspot. */
+export function hotspotIntentById(
+  pagePlan: PagePlanV1,
+  aligned: readonly AlignedHotspotV1[],
+  hotspotId: string,
+): HotspotIntentV1 | null {
+  const planned = pagePlan.hotspots.find((hotspot) => hotspot.id === hotspotId);
+  const alignedRow = aligned.find((hotspot) => hotspot.id === hotspotId);
+  if (!planned || !alignedRow) return null;
+  return intentFromHit(
+    { planned, aligned: alignedRow, method: "bbox" },
+    activationPoint(alignedRow),
+  );
+}
+
+/** Resolve a geometric image point into the same canonical semantic intent. */
+export function hotspotIntentAtPoint(
+  pagePlan: PagePlanV1,
+  aligned: readonly AlignedHotspotV1[],
+  x: number,
+  y: number,
+): HotspotIntentV1 | null {
+  const hit = resolveHotspot(pagePlan, aligned, x, y);
+  return hit ? intentFromHit(hit, { x_pct: x, y_pct: y }) : null;
+}
+
 /** Fields already understood by the existing warm tap pipeline. */
 export function deterministicTapPrefetch(hit: HotspotHitV1) {
   return {
@@ -128,5 +194,15 @@ export function deterministicTapPrefetch(hit: HotspotHitV1) {
     subject_context: hit.planned.sub_query,
     groundable: true,
     confidence: hit.aligned.alignment_confidence,
+  } as const;
+}
+
+export function deterministicTapPrefetchFromIntent(intent: HotspotIntentV1) {
+  return {
+    subject: intent.label,
+    style: "",
+    subject_context: intent.sub_query,
+    groundable: true,
+    confidence: intent.alignment_confidence,
   } as const;
 }

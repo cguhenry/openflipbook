@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { AlignedHotspotV1, PagePlanV1 } from "@openflipbook/config";
-import { deterministicTapPrefetch, pointInPolygon, resolveHotspot } from "./hotspot-resolver";
+import {
+  deterministicTapPrefetch,
+  hotspotIntentAtPoint,
+  hotspotIntentById,
+  pointInPolygon,
+  resolveHotspot,
+} from "./hotspot-resolver";
 
 const plan: PagePlanV1 = {
   schema_version: "1.0",
@@ -68,5 +74,23 @@ describe("deterministic hotspot resolver", () => {
       groundable: true,
       confidence: 0.9,
     });
+  });
+
+  it("keeps label ids, queries, and geometric hits on one semantic intent", () => {
+    for (const [index, hotspot] of plan.hotspots.entries()) {
+      const direct = hotspotIntentById(plan, aligned, hotspot.id);
+      expect(direct).toMatchObject({
+        hotspot_id: hotspot.id,
+        sub_query: hotspot.sub_query,
+        visual_target: hotspot.visual_target,
+      });
+      const [x, y, width, height] = aligned[index]!.actual_bbox;
+      expect(
+        hotspotIntentAtPoint(plan, aligned, x + width / 2, y + height / 2),
+      ).toMatchObject({
+        hotspot_id: hotspot.id,
+        sub_query: hotspot.sub_query,
+      });
+    }
   });
 });

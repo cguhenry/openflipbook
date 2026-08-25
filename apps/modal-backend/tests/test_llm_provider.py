@@ -30,6 +30,14 @@ def test_render_base_place_scene_is_immersive_without_labels() -> None:
     assert "visual-explainer page" not in text
 
 
+def test_dom_label_prompt_owns_labels_and_forbids_empty_callouts() -> None:
+    from providers.prompt_library.style import NO_LETTERING
+
+    assert "DOM owns labels" in NO_LETTERING
+    assert "empty label boxes" in NO_LETTERING
+    assert "callout frames" in NO_LETTERING
+
+
 def test_render_base_place_submap_is_cartographic() -> None:
     text = llm._render_base_instruction("place_submap")
     assert "closer MAP" in text

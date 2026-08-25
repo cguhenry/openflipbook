@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
-import { listNodesBySession } from "@/lib/db";
+import { deleteSessionRecords, listNodesBySession } from "@/lib/db";
 import { readServerEnv } from "@/lib/env";
 import { nodeImagePath } from "@/lib/node-image";
+import { deleteStoredObjects, uniqueStoredKeys } from "@/lib/r2";
+import { isSafeId } from "@/lib/ids";
+import { requireOwner } from "@/lib/session-owner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,4 +64,43 @@ export async function GET(req: Request, { params }: Params) {
       created_at: row.created_at,
     })),
   });
+}
+
+export async function DELETE(_req: Request, { params }: Params) {
+  const { id } = await params;
+  if (!isSafeId(id)) {
+    return NextResponse.json({ error: "invalid session id" }, { status: 400 });
+  }
+  const env = readServerEnv();
+  if (!env.MONGODB_URI || !env.MONGODB_DB) {
+    return NextResponse.json({ error: "persistence not configured" }, { status: 503 });
+  }
+  const owner = await requireOwner(id);
+  if (!owner.ok) return owner.res;
+
+  try {
+    const rows: Awaited<ReturnType<typeof listNodesBySession>>["rows"] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await listNodesBySession(id, { cursor, limit: 200 });
+      rows.push(...page.rows);
+      cursor = page.next_cursor;
+    } while (cursor);
+    const imageKeys = uniqueStoredKeys(rows.map((row) => row.image_key));
+    const deleted = await deleteSessionRecords(id);
+    let imageCleanupFailed = false;
+    try {
+      await deleteStoredObjects(imageKeys);
+    } catch {
+      imageCleanupFailed = true;
+    }
+    return NextResponse.json({
+      deleted_session_id: id,
+      deleted_nodes: deleted.deleted_nodes,
+      deleted_images: imageKeys.length,
+      image_cleanup_failed: imageCleanupFailed,
+    });
+  } catch {
+    return NextResponse.json({ error: "session delete failed" }, { status: 500 });
+  }
 }

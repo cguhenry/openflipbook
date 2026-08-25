@@ -15,7 +15,10 @@ LETTERING_GUARD = "Keep any lettering sparse and legible — no garbled text."
 # garbled-lettering problem and clicks landing on text instead of places.
 NO_LETTERING = (
     "Do not write ANY names, lettering, text, or cartouches into the image — "
-    "the interface overlays names separately."
+    "the interface overlays names separately. Do not draw empty label boxes, "
+    "callout frames, legends, text placeholders, blank annotation rectangles, "
+    "or connector-label placeholders; leave those elements out because the DOM "
+    "owns labels."
 )
 
 

@@ -26,6 +26,7 @@ describe("SessionHistory", () => {
     );
     const onNewSession = vi.fn();
     const onResume = vi.fn();
+    const onDelete = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -36,6 +37,7 @@ describe("SessionHistory", () => {
         currentSessionId="s-current"
         onNewSession={onNewSession}
         onResume={onResume}
+        onDelete={onDelete}
       />,
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -81,6 +83,7 @@ describe("SessionHistory", () => {
         currentSessionId="s-current"
         onNewSession={vi.fn()}
         onResume={vi.fn()}
+        onDelete={vi.fn()}
       />,
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -92,6 +95,60 @@ describe("SessionHistory", () => {
     expect(container.textContent).toContain("最近的工作階段");
     expect(container.textContent).toContain("新工作階段");
     expect(container.textContent).toContain("尚無已儲存的工作階段");
+    root.unmount();
+    container.remove();
+  });
+
+  it("confirms and deletes only the selected exact session", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/sessions/s-delete") {
+        expect(init?.method).toBe("DELETE");
+        return Promise.resolve({ ok: true, json: async () => ({}) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          sessions: [{
+            session_id: "s-delete",
+            title: "Temporary HF2",
+            node_count: 3,
+            branch_count: 0,
+            updated_at: "2026-08-22T01:00:00Z",
+            has_image_seed: false,
+          }],
+        }),
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onDelete = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    root.render(
+      <SessionHistory
+        t={getStrings("en")}
+        uiLocale="en"
+        currentSessionId="s-other"
+        onNewSession={vi.fn()}
+        onResume={vi.fn()}
+        onDelete={onDelete}
+      />,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    container.querySelector('button[aria-controls="session-history-panel"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const deleteButton = container.querySelector('button[aria-label="Delete: Temporary HF2"]');
+    expect(deleteButton).toBeTruthy();
+    deleteButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Temporary HF2"));
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/s-delete", { method: "DELETE" });
+    expect(onDelete).toHaveBeenCalledWith("s-delete");
+    expect(container.querySelector('button[aria-label="Delete: Temporary HF2"]')).toBeNull();
+    confirm.mockRestore();
     root.unmount();
     container.remove();
   });

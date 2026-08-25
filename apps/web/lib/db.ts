@@ -444,6 +444,62 @@ export async function listSessionSummaries(limit = 30): Promise<SessionSummaryRo
     .slice(0, cap);
 }
 
+export interface DeletedSessionRecords {
+  deleted_nodes: number;
+  deleted_world_state: number;
+  deleted_world_map: number;
+  deleted_presence: number;
+  deleted_owner: number;
+}
+
+/** Delete only records keyed to one session, keeping global errors untouched. */
+export async function deleteSessionRecords(sessionId: string): Promise<DeletedSessionRecords> {
+  const db = await getDb();
+  const client = await getMongoClient();
+  const mongoSession = client.startSession();
+  let result: DeletedSessionRecords = {
+    deleted_nodes: 0,
+    deleted_world_state: 0,
+    deleted_world_map: 0,
+    deleted_presence: 0,
+    deleted_owner: 0,
+  };
+  try {
+    await mongoSession.withTransaction(async () => {
+      const nodesResult = await db.collection<NodeDoc>("nodes").deleteMany(
+        { session_id: sessionId },
+        { session: mongoSession },
+      );
+      const worldResult = await db.collection<{ _id: string }>("world_state").deleteOne(
+        { _id: sessionId },
+        { session: mongoSession },
+      );
+      const worldMapResult = await db.collection<{ _id: string }>("world_map").deleteOne(
+        { _id: sessionId },
+        { session: mongoSession },
+      );
+      const presenceResult = await db.collection("session_presence").deleteMany(
+        { session_id: sessionId },
+        { session: mongoSession },
+      );
+      const ownerResult = await db.collection<{ _id: string }>("session_owners").deleteOne(
+        { _id: sessionId },
+        { session: mongoSession },
+      );
+      result = {
+        deleted_nodes: nodesResult.deletedCount,
+        deleted_world_state: worldResult.deletedCount,
+        deleted_world_map: worldMapResult.deletedCount,
+        deleted_presence: presenceResult.deletedCount,
+        deleted_owner: ownerResult.deletedCount,
+      };
+    });
+  } finally {
+    await mongoSession.endSession();
+  }
+  return result;
+}
+
 function compareRows(a: NodeRow, b: NodeRow): number {
   return a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
 }

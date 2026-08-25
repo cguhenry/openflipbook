@@ -321,6 +321,10 @@ async def test_responses_alignment_sends_base64_image_and_exact_ids(
         result = await OpenClawGatewayClient(http).align_hotspots(_plan(), image_data_url)
 
     assert [row.id for row in result] == ["h001", "h002", "h003"]
+    system_text = captured[0]["input"][0]["content"][0]["text"]
+    assert "Never swap ids" in system_text
+    assert "empty label box" in system_text
+    assert "visual_target" in system_text
     user_content = captured[0]["input"][1]["content"]
     assert user_content[-1] == {
         "type": "input_image",
@@ -392,6 +396,8 @@ async def test_image_seed_returns_contract_and_makes_one_vision_request(
     assert "last character must be }" in system_text
     assert "no markdown" in system_text
     assert "explicitly contain the words 'no text'" in system_text
+    assert "empty label boxes" in system_text
+    assert "DOM owns labels" in system_text
     for required in (
         '"title"',
         '"summary"',
