@@ -58,6 +58,77 @@ NEIGHBORS_SCHEMA: dict[str, Any] = {
     "required": ["neighbors"],
 }
 
+RELATED_TOPICS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "topics": {
+            "type": "array",
+            "items": {"type": "string"},
+        }
+    },
+    "required": ["topics"],
+}
+
+
+def _build_related_topics(parsed: dict[str, Any], max_topics: int) -> list[str]:
+    """Coerce a text-only topic response into unique, concise labels."""
+    items = parsed.get("topics", [])
+    if not isinstance(items, list):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        topic = str(item).strip()[:120]
+        key = topic.casefold()
+        if not topic or key in seen:
+            continue
+        seen.add(key)
+        out.append(topic)
+        if len(out) >= max_topics:
+            break
+    return out
+
+
+async def propose_related_topics(
+    parent_title: str,
+    parent_query: str,
+    output_locale: str | None = None,
+    max_topics: int = 5,
+) -> list[str]:
+    """Suggest concise text topics without inspecting or generating an image."""
+    locale_clause = (
+        f" Write every topic in language code '{output_locale}'."
+        if output_locale and output_locale.lower() not in ("en", "auto", "")
+        else ""
+    )
+    system = (
+        f"You help a reader continue an illustrated page titled '{parent_title}' "
+        f"(query: '{parent_query}'). Suggest {max_topics} concise, distinct "
+        "related topics the reader could choose next. Return JSON only as "
+        '{"topics":["short topic", "short topic"]}. Each topic is a readable '
+        "2-8 word phrase, stays in the parent's subject domain, and is not a "
+        "duplicate of the page title. Do not describe images, call tools, or "
+        "generate a page."
+        + locale_clause
+    )
+    user = "Return 3 to 5 useful choices, or an empty list if none are appropriate."
+    from obs import span
+
+    async with span("llm.related_topics", model=_text_model(online=False)) as ctx:
+        parsed = await _llm._complete_json(
+            model=_text_model(online=False),
+            messages=[
+                _system_message(system),
+                {"role": "user", "content": user},
+            ],
+            schema=RELATED_TOPICS_SCHEMA,
+            schema_name="related_topics",
+            temperature=0.4,
+            max_tokens=500,
+            span_ctx=ctx,
+        )
+    return _build_related_topics(parsed, max(1, min(5, max_topics)))
+
 
 async def propose_neighbors(
     image_data_url: str,

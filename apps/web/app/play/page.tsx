@@ -94,7 +94,9 @@ import {
   type WanderStopReason,
 } from "@/hooks/useWander";
 import { BranchBeacons } from "@/components/PlayPage/BranchBeacons";
+import { BranchChooser } from "@/components/PlayPage/BranchBeacons";
 import { GeneratingBanner } from "@/components/PlayPage/GeneratingBanner";
+import { RelatedTopicsTray } from "@/components/PlayPage/RelatedTopicsTray";
 import { Quickbar } from "@/components/PlayPage/Quickbar";
 import { HelpOverlay } from "@/components/PlayPage/HelpOverlay";
 import { CodexPanel } from "@/components/PlayPage/CodexPanel";
@@ -257,6 +259,14 @@ interface PersistBody {
   page_plan?: PagePlanV1 | null;
   aligned_hotspots?: AlignedHotspotV1[] | null;
   seed_type?: "image" | null;
+}
+
+interface PendingPersist {
+  body: PersistBody;
+  page: Page;
+  finalPrompt: string;
+  traceId: string;
+  generationId: string;
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -487,6 +497,14 @@ export default function PlayPage() {
     start: startBloom,
     close: closeBloom,
   } = useExpandBloom(persistNode);
+  const [relatedTopicsOpen, setRelatedTopicsOpen] = useState(false);
+  const [relatedTopics, setRelatedTopics] = useState<string[]>([]);
+  const [relatedTopicsLoading, setRelatedTopicsLoading] = useState(false);
+  const [relatedTopicsError, setRelatedTopicsError] = useState(false);
+  const relatedTopicsCacheRef = useRef(new Map<string, string[]>());
+  const relatedTopicsAbortRef = useRef<AbortController | null>(null);
+  const relatedTopicsLoadingRef = useRef(false);
+  const relatedSelectionRef = useRef(false);
   // An empty bloom (VLM proposed nothing usable) shows its brief "no neighbours
   // found" message, then auto-dismisses — so the coach + Around return instead
   // of a dead tray lingering at the bottom.
@@ -777,6 +795,9 @@ export default function PlayPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const activeGenerationRef = useRef<ActiveGeneration | null>(null);
+  const persistingRef = useRef(false);
+  const pendingPersistRef = useRef<PendingPersist | null>(null);
+  const saveRetryAbortRef = useRef<AbortController | null>(null);
   // The last generate body, any kind — powers the error banner's "Try again".
   const lastGenerateRef = useRef<GenerateRequestBody | null>(null);
   // True when the current error landed while the tab was HIDDEN — the
@@ -827,7 +848,10 @@ export default function PlayPage() {
       ),
     [history.items],
   );
-  const shared = useSharedSession(sessionId, knownNodeIds);
+  const shared = useSharedSession(
+    PRODUCT_FLAGS.nasSlim ? null : sessionId,
+    knownNodeIds,
+  );
   // The speed preset's wire half — spread into every generate() body next to
   // image_tier. Balanced knobs produce {} (byte-identity with today).
   const loopWire = useMemo(
@@ -965,12 +989,59 @@ export default function PlayPage() {
     bucketKey,
   } = usePrefetchCache();
 
+  const commitPersistedPage = useCallback(
+    (pending: PendingPersist, saved: { id: string; image_url: string }) => {
+      const persisted: Page = {
+        ...pending.page,
+        nodeId: saved.id,
+        sceneView: pending.page.sceneView
+          ? { ...pending.page.sceneView, node_id: saved.id }
+          : null,
+      };
+      setPage(persisted);
+      setHistory((prev) => {
+        const existingIdx = prev.items.findIndex((p) => p.nodeId === saved.id);
+        const items =
+          existingIdx >= 0
+            ? prev.items.map((p, i) => (i === existingIdx ? persisted : p))
+            : [...prev.items, persisted];
+        const trail = [
+          ...prev.trail.slice(0, prev.trailIdx + 1),
+          saved.id,
+        ];
+        return { items, trail, trailIdx: trail.length - 1 };
+      });
+      const url = new URL(window.location.href);
+      url.pathname = `/n/${saved.id}`;
+      window.history.replaceState({}, "", url.toString());
+      if (persisted.imageDataUrl) {
+        void triggerExtraction({
+          sessionId: persisted.sessionId,
+          nodeId: saved.id,
+          imageDataUrl: persisted.imageDataUrl,
+          caption: persisted.title,
+          sceneDescription: pending.finalPrompt,
+          sceneView: persisted.sceneView ?? null,
+          traceId: pending.traceId,
+        }).then((res) => {
+          if (!res || (res.added === 0 && res.updated === 0)) {
+            setLocalizeStatus({ nodeId: saved.id, status: "failed" });
+          }
+        });
+      }
+    },
+    [],
+  );
+
   const generate = useCallback(
     async (body: GenerateRequestBody) => {
       // Every generation kind (query/tap/edit/expand/ascend) funnels through
       // here — keep the last body so the error banner's "Try again" can
       // replay it verbatim (minus trace_id: the API route claims the
       // Idempotency-Key per trace, so a same-trace replay would 409).
+      saveRetryAbortRef.current?.abort();
+      saveRetryAbortRef.current = null;
+      pendingPersistRef.current = null;
       const active = createGeneration();
       activeGenerationRef.current?.controller.abort();
       abortRef.current?.abort();
@@ -1093,19 +1164,30 @@ export default function PlayPage() {
               setGenerationNotice(t.groundingUnavailable);
             }
             setProgressiveDraft(false);
-            setPage({
+            const pendingPage: Page = {
               nodeId: null,
               sessionId: evt.session_id,
               query: body.query,
               title: evt.page_title,
               imageDataUrl: evt.image_data_url,
+              parentId: body.current_node_id || null,
+              sourceHotspotId:
+                body.mode === "tap" ? body.source_hotspot_id ?? null : null,
               sources: evtSources,
               pagePlan: evt.page_plan ?? null,
               alignedHotspots: evt.aligned_hotspots ?? null,
               // Mirror the persist body: an edit is a REVISION. Tap/fresh
               // stay absent = descend.
               ...(body.mode === "edit" ? { relation: "edit" as const } : {}),
-            });
+              ...(body.mode === "tap" && body.click
+                ? {
+                    clickInParent: {
+                      xPct: body.click.x_pct,
+                      yPct: body.click.y_pct,
+                    },
+                  }
+                : {}),
+            };
             // Flip the morph gate so the decode-then-reveal effect runs
             // ONLY on the final image, not on streamed progress partials.
             setMorphFx((prev) => (prev ? { ...prev, isFinal: true } : prev));
@@ -1140,132 +1222,74 @@ export default function PlayPage() {
               body.scene_view,
               evt.scene_view
             );
-            void persistNode(
-              {
-                parent_id: body.current_node_id || null,
-                session_id: evt.session_id,
-                query: body.query,
-                page_title: evt.page_title,
-                image_data_url: evt.image_data_url,
-                image_model: evt.image_model,
-                prompt_author_model: evt.prompt_author_model,
-                aspect_ratio: body.aspect_ratio,
-                final_prompt: evt.final_prompt,
-                source_hotspot_id:
-                  body.mode === "tap" ? body.source_hotspot_id ?? null : null,
-                // An edit is a REVISION of the current page, not a place
-                // inside it — the graph chrome renders it as "✎ edited".
-                ...(body.mode === "edit" ? { relation: "edit" as const } : {}),
-                click_in_parent:
-                  body.mode === "tap" && body.click
-                    ? {
-                        x_pct: body.click.x_pct,
-                        y_pct: body.click.y_pct,
-                      }
-                    : null,
-                sources: evtSources.map((s) => ({
-                  url: s.url,
-                  title: s.title ?? null,
-                  ...(s.id ? { id: s.id } : {}),
-                  ...(s.snippet ? { snippet: s.snippet } : {}),
-                  ...(s.engine !== undefined ? { engine: s.engine } : {}),
-                })),
-                scene_view: foldedSceneView,
-                page_plan: evt.page_plan ?? null,
-                aligned_hotspots: evt.aligned_hotspots ?? null,
-              },
+            const displayPage: Page = {
+              ...pendingPage,
+              sceneView: foldedSceneView,
+            };
+            setPage(displayPage);
+            const persistBody: PersistBody = {
+              parent_id: body.current_node_id || null,
+              session_id: evt.session_id,
+              query: body.query,
+              page_title: evt.page_title,
+              image_data_url: evt.image_data_url,
+              image_model: evt.image_model,
+              prompt_author_model: evt.prompt_author_model,
+              aspect_ratio: body.aspect_ratio,
+              final_prompt: evt.final_prompt,
+              source_hotspot_id:
+                body.mode === "tap" ? body.source_hotspot_id ?? null : null,
+              // An edit is a REVISION of the current page, not a place
+              // inside it — the graph chrome renders it as "✎ edited".
+              ...(body.mode === "edit" ? { relation: "edit" as const } : {}),
+              click_in_parent:
+                body.mode === "tap" && body.click
+                  ? {
+                      x_pct: body.click.x_pct,
+                      y_pct: body.click.y_pct,
+                    }
+                  : null,
+              sources: evtSources.map((s) => ({
+                url: s.url,
+                title: s.title ?? null,
+                ...(s.id ? { id: s.id } : {}),
+                ...(s.snippet ? { snippet: s.snippet } : {}),
+                ...(s.engine !== undefined ? { engine: s.engine } : {}),
+              })),
+              scene_view: foldedSceneView,
+              page_plan: evt.page_plan ?? null,
+              aligned_hotspots: evt.aligned_hotspots ?? null,
+            };
+            const pending: PendingPersist = {
+              body: persistBody,
+              page: displayPage,
+              finalPrompt: evt.final_prompt,
               traceId,
-              ac.signal,
-            ).then((saved) => {
-              // A newer generation or a navigation aborted this one while the
-              // node was persisting. This .then is detached from the fetch
-              // reader, so without this guard it would clobber the current
-              // page/history/URL with THIS (stale) node. (#3)
-              if (
-                ac.signal.aborted ||
-                activeGenerationRef.current?.generationId !== active.generationId
-              ) return;
-              if (saved) {
-                const persisted: Page = {
-                  nodeId: saved.id,
-                  sessionId: evt.session_id,
-                  query: body.query,
-                  title: evt.page_title,
-                  imageDataUrl: evt.image_data_url,
-                  parentId: body.current_node_id || null,
-                  sourceHotspotId:
-                    body.mode === "tap" ? body.source_hotspot_id ?? null : null,
-                  sources: evtSources,
-                  pagePlan: evt.page_plan ?? null,
-                  alignedHotspots: evt.aligned_hotspots ?? null,
-                  // Same relation the persist body sent — so the in-session
-                  // map reads this page like the atlas will after a reload.
-                  ...(body.mode === "edit" ? { relation: "edit" as const } : {}),
-                  sceneView: foldedSceneView
-                    ? { ...foldedSceneView, node_id: saved.id }
-                    : null,
-                  ...(body.mode === "tap" && body.click
-                    ? {
-                        clickInParent: {
-                          xPct: body.click.x_pct,
-                          yPct: body.click.y_pct,
-                        },
-                      }
-                    : {}),
-                };
-                setPage((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        nodeId: saved.id,
-                        sceneView: foldedSceneView
-                          ? { ...foldedSceneView, node_id: saved.id }
-                          : null,
-                      }
-                    : prev
-                );
-                const newId = saved.id;
-                setHistory((prev) => {
-                  const existingIdx = prev.items.findIndex(
-                    (p) => p.nodeId === newId
-                  );
-                  const items =
-                    existingIdx >= 0
-                      ? prev.items.map((p, i) =>
-                          i === existingIdx ? persisted : p
-                        )
-                      : [...prev.items, persisted];
-                  const trail = [
-                    ...prev.trail.slice(0, prev.trailIdx + 1),
-                    newId,
-                  ];
-                  return { items, trail, trailIdx: trail.length - 1 };
-                });
-                const url = new URL(window.location.href);
-                url.pathname = `/n/${saved.id}`;
-                window.history.replaceState({}, "", url.toString());
-                void triggerExtraction({
-                  sessionId: evt.session_id,
-                  nodeId: saved.id,
-                  imageDataUrl: evt.image_data_url,
-                  caption: evt.page_title,
-                  sceneDescription: evt.final_prompt ?? null,
-                  sceneView: foldedSceneView
-                    ? { ...foldedSceneView, node_id: saved.id }
-                    : null,
-                  traceId,
-                }).then((res) => {
-                  // Surface a silent extraction miss (error or 0/0 even after
-                  // the one retry) so the user isn't left on a page whose taps
-                  // quietly mis-behave with no signal. Reuses localizeStatus so
-                  // the "Map it" affordance is one click, overlay or not. (#6)
-                  if (ac.signal.aborted) return;
-                  if (!res || (res.added === 0 && res.updated === 0)) {
-                    setLocalizeStatus({ nodeId: saved.id, status: "failed" });
-                  }
-                });
-              }
-            });
+              generationId: active.generationId,
+            };
+            pendingPersistRef.current = pending;
+            persistingRef.current = true;
+            setStatusMsg(t.savingPage);
+            // The page can display the final image while this awaits, but it
+            // must remain active and non-ready until the save is acknowledged.
+            const saved = await persistNode(persistBody, traceId, ac.signal);
+            persistingRef.current = false;
+            if (
+              ac.signal.aborted ||
+              activeGenerationRef.current?.generationId !== active.generationId
+            ) {
+              return;
+            }
+            if (!saved) {
+              // Keep the final frame and its exact save body for a retry. The
+              // retry uses the same idempotency key and never regenerates.
+              setError(t.pagePersistenceFailed);
+              setStatusMsg(null);
+              setPhase("error");
+              return;
+            }
+            pendingPersistRef.current = null;
+            commitPersistedPage(pending, saved);
           } else if (evt.type === "error") {
             hudEmit("sse:error", {
               message: evt.message,
@@ -1342,10 +1366,14 @@ export default function PlayPage() {
         }
       }
     },
-    [bindTrace, t]
+    [bindTrace, commitPersistedPage, t]
   );
 
   const stopActiveGeneration = useCallback(() => {
+    if (persistingRef.current) {
+      setStatusMsg(t.savingPage);
+      return;
+    }
     const active = activeGenerationRef.current;
     clickInFlightRef.current = false;
     if (!active) return;
@@ -1360,15 +1388,46 @@ export default function PlayPage() {
     void stopGeneration(active, "/api/generate-page/cancel");
   }, [t]);
 
+  const retryPendingPersist = useCallback(async () => {
+    const pending = pendingPersistRef.current;
+    if (!pending || persistingRef.current) return;
+    saveRetryAbortRef.current?.abort();
+    const ac = new AbortController();
+    saveRetryAbortRef.current = ac;
+    persistingRef.current = true;
+    setError(null);
+    setGenerationNotice(null);
+    setPhase("generating");
+    setStatusMsg(t.savingPage);
+    const saved = await persistNode(pending.body, pending.traceId, ac.signal);
+    persistingRef.current = false;
+    if (saveRetryAbortRef.current === ac) saveRetryAbortRef.current = null;
+    if (ac.signal.aborted) return;
+    if (!saved) {
+      setError(t.pagePersistenceFailed);
+      setPhase("error");
+      setStatusMsg(null);
+      return;
+    }
+    pendingPersistRef.current = null;
+    commitPersistedPage(pending, saved);
+    setPhase("ready");
+    setStatusMsg(null);
+  }, [commitPersistedPage, t]);
+
   // The error banner's "Try again": replay the exact failed request with the
   // trace_id stripped — the API route claims the Idempotency-Key per trace,
   // so a fresh trace is what makes the retry actually run.
   const retryLast = useCallback(() => {
+    if (pendingPersistRef.current) {
+      void retryPendingPersist();
+      return;
+    }
     const last = lastGenerateRef.current;
     if (!last) return;
     const { trace_id: _dropped, generation_id: _oldGeneration, ...rest } = last;
     void generate(rest);
-  }, [generate]);
+  }, [generate, retryPendingPersist]);
 
   // Resume-retry: when the tab comes back to the foreground and the current
   // error was recorded while HIDDEN (the freeze-suspension class), fire the
@@ -1388,6 +1447,7 @@ export default function PlayPage() {
   // Build the expand body from the current page + session state and hand it to
   // the bloom hook (which owns the SSE loop, tray state, persistence + abort).
   const triggerExpand = useCallback(() => {
+    if (PRODUCT_FLAGS.nasSlim) return;
     if (!page || !page.imageDataUrl || phase === "generating") return;
     if (bloom && !bloom.done) return;
     // Image conditioning: every neighbour shares the parent's world + the
@@ -1458,6 +1518,130 @@ export default function PlayPage() {
     worldEnabled,
     geoMap.entities,
   ]);
+
+  const closeRelatedTopics = useCallback(() => {
+    relatedTopicsAbortRef.current?.abort();
+    relatedTopicsAbortRef.current = null;
+    relatedTopicsLoadingRef.current = false;
+    setRelatedTopicsOpen(false);
+    setRelatedTopicsLoading(false);
+  }, []);
+
+  const requestRelatedTopics = useCallback(async () => {
+    if (
+      !PRODUCT_FLAGS.nasSlim ||
+      !page?.nodeId ||
+      phase === "generating" ||
+      relatedTopicsLoadingRef.current
+    ) {
+      return;
+    }
+    const nodeId = page.nodeId;
+    setRelatedTopicsOpen(true);
+    setRelatedTopicsError(false);
+    const cached = relatedTopicsCacheRef.current.get(nodeId);
+    if (cached) {
+      setRelatedTopics(cached);
+      setRelatedTopicsLoading(false);
+      return;
+    }
+    relatedTopicsAbortRef.current?.abort();
+    const ac = new AbortController();
+    relatedTopicsAbortRef.current = ac;
+    relatedTopicsLoadingRef.current = true;
+    setRelatedTopics([]);
+    setRelatedTopicsLoading(true);
+    try {
+      const res = await fetch("/api/related-topics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: page.sessionId,
+          page_title: page.title,
+          query: page.query,
+          output_locale: resolveOutputLocale(outputLocale),
+        }),
+        signal: ac.signal,
+      });
+      const payload = (await res.json().catch(() => ({}))) as {
+        topics?: unknown;
+      };
+      if (!res.ok) throw new Error(`related topics failed: HTTP ${res.status}`);
+      const topics = Array.isArray(payload.topics)
+        ? payload.topics
+            .filter((topic): topic is string => typeof topic === "string")
+            .map((topic) => topic.trim())
+            .filter(Boolean)
+            .slice(0, 5)
+        : [];
+      relatedTopicsCacheRef.current.set(nodeId, topics);
+      if (!ac.signal.aborted) {
+        setRelatedTopics(topics);
+        setRelatedTopicsError(false);
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError" && !ac.signal.aborted) {
+        setRelatedTopics([]);
+        setRelatedTopicsError(true);
+      }
+    } finally {
+      if (relatedTopicsAbortRef.current === ac) {
+        relatedTopicsAbortRef.current = null;
+      }
+      relatedTopicsLoadingRef.current = false;
+      if (!ac.signal.aborted) setRelatedTopicsLoading(false);
+    }
+  }, [page, phase, outputLocale]);
+
+  const selectRelatedTopic = useCallback(
+    (topic: string) => {
+      if (
+        !PRODUCT_FLAGS.nasSlim ||
+        !page?.nodeId ||
+        phase === "generating" ||
+        relatedSelectionRef.current
+      ) {
+        return;
+      }
+      relatedSelectionRef.current = true;
+      closeRelatedTopics();
+      void generate({
+        query: topic,
+        aspect_ratio: "16:9",
+        web_search: true,
+        session_id: page.sessionId,
+        current_node_id: page.nodeId,
+        mode: "query",
+        image_tier: requestImageTier,
+        ...loopWire,
+        ...(devModel ? { image_model: devModel } : {}),
+        output_locale: resolveOutputLocale(outputLocale),
+        ...(styleAnchor ? { session_style_anchor: styleAnchor.style } : {}),
+      });
+    },
+    [
+      page,
+      phase,
+      closeRelatedTopics,
+      generate,
+      requestImageTier,
+      loopWire,
+      devModel,
+      outputLocale,
+      styleAnchor,
+    ],
+  );
+
+  useEffect(() => {
+    relatedTopicsAbortRef.current?.abort();
+    relatedTopicsAbortRef.current = null;
+    relatedTopicsLoadingRef.current = false;
+    relatedSelectionRef.current = false;
+    setRelatedTopicsOpen(false);
+    setRelatedTopics([]);
+    setRelatedTopicsLoading(false);
+    setRelatedTopicsError(false);
+  }, [page?.nodeId]);
 
   const acceptUploadedImage = useCallback(
     async (file: File) => {
@@ -1621,6 +1805,16 @@ export default function PlayPage() {
       setShowVideo(false);
       activeGenerationRef.current = null;
       lastGenerateRef.current = null;
+      relatedTopicsAbortRef.current?.abort();
+      relatedTopicsAbortRef.current = null;
+      relatedTopicsLoadingRef.current = false;
+      relatedSelectionRef.current = false;
+      setRelatedTopicsOpen(false);
+      setRelatedTopics([]);
+      setRelatedTopicsLoading(false);
+      setRelatedTopicsError(false);
+      pendingPersistRef.current = null;
+      persistingRef.current = false;
       erroredWhileHiddenRef.current = false;
       clickInFlightRef.current = false;
       semanticIntentRef.current = null;
@@ -2169,6 +2363,29 @@ export default function PlayPage() {
     () => buildBreadcrumb(page?.nodeId ?? null, history.items),
     [page?.nodeId, history.items],
   );
+  const branchOptions = useMemo(
+    () =>
+      page?.nodeId
+        ? history.items
+            .filter(
+              (item): item is Page & {
+                nodeId: string;
+                clickInParent: { xPct: number; yPct: number };
+              } =>
+                Boolean(
+                  item.nodeId &&
+                    item.parentId === page.nodeId &&
+                    item.clickInParent,
+                ),
+            )
+            .map((item) => ({
+              nodeId: item.nodeId,
+              title: item.title,
+              clickInParent: item.clickInParent,
+            }))
+        : [],
+    [history.items, page?.nodeId],
+  );
 
   const navigateToTrailIdx = (
     prev: typeof history,
@@ -2339,7 +2556,7 @@ export default function PlayPage() {
     onToggleGeoOverlay: () => {
       if (!PRODUCT_FLAGS.nasSlim) setGeoOverlayOn((g) => !g);
     },
-    onExpandOutward: triggerExpand,
+    onExpandOutward: PRODUCT_FLAGS.nasSlim ? requestRelatedTopics : triggerExpand,
     onCloseOverlays: () => {
       setHelpOpen(false);
       setQuickbarOpen(false);
@@ -3619,6 +3836,16 @@ export default function PlayPage() {
     disconnectStream();
     activeGenerationRef.current = null;
     lastGenerateRef.current = null;
+    relatedTopicsAbortRef.current?.abort();
+    relatedTopicsAbortRef.current = null;
+    relatedTopicsLoadingRef.current = false;
+    relatedSelectionRef.current = false;
+    setRelatedTopicsOpen(false);
+    setRelatedTopics([]);
+    setRelatedTopicsLoading(false);
+    setRelatedTopicsError(false);
+    pendingPersistRef.current = null;
+    persistingRef.current = false;
     erroredWhileHiddenRef.current = false;
     clickInFlightRef.current = false;
     semanticIntentRef.current = null;
@@ -3831,7 +4058,7 @@ export default function PlayPage() {
               onClick={retryLast}
               className="shrink-0 rounded-full border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-900 hover:bg-red-100"
             >
-              ↻ {t.tryAgain}
+              ↻ {pendingPersistRef.current ? t.retryPersistence : t.tryAgain}
             </button>
           )}
         </div>
@@ -3910,14 +4137,14 @@ export default function PlayPage() {
             {history.items.length > history.trail.length
               ? ` · ${formatUi(t.pagesExplored, { count: history.items.length })}`
               : ""}
-            {shared.viewers !== null && shared.viewers > 1 && (
+            {!PRODUCT_FLAGS.nasSlim && shared.viewers !== null && shared.viewers > 1 && (
               <span title={formatUi(t.viewersNow, { count: shared.viewers })}>
                 {" "}
                 · 👁 {shared.viewers}
               </span>
             )}
           </span>
-          {shared.incoming && (
+          {!PRODUCT_FLAGS.nasSlim && shared.incoming && (
             <button
               type="button"
               onClick={() => {
@@ -4302,21 +4529,7 @@ export default function PlayPage() {
               !beaconsHidden &&
               (streamStatus === "off" || streamStatus === "error") && (
                 <BranchBeacons
-                  beacons={history.items
-                    .filter(
-                      (
-                        p,
-                      ): p is Page & {
-                        nodeId: string;
-                        clickInParent: { xPct: number; yPct: number };
-                      } =>
-                        Boolean(p.nodeId && p.parentId === page.nodeId && p.clickInParent),
-                    )
-                    .map((p) => ({
-                      nodeId: p.nodeId,
-                      title: p.title,
-                      clickInParent: p.clickInParent,
-                    }))}
+                  beacons={branchOptions}
                   onSelect={selectFromMap}
                   t={t}
                 />
@@ -4406,20 +4619,39 @@ export default function PlayPage() {
                   {wandering ? "Wandering…" : "Wander"}
                 </button>
               )}
-              <button
-                type="button"
-                onClick={triggerExpand}
-                disabled={
-                  phase === "generating" ||
-                  !page?.imageDataUrl ||
-                  (bloom !== null && !bloom.done)
-                }
-                className="flex items-center gap-1.5 rounded-full bg-teal-600/85 px-3 py-1 text-xs text-white hover:bg-teal-600 disabled:opacity-50"
-                title={t.aroundTitle}
-              >
-                <BloomGlyph className="h-3.5 w-3.5" />
-                {t.around}
-              </button>
+              {PRODUCT_FLAGS.nasSlim ? (
+                <button
+                  type="button"
+                  data-testid="related-topics-button"
+                  onClick={() => void requestRelatedTopics()}
+                  disabled={
+                    phase === "generating" ||
+                    !page?.nodeId ||
+                    relatedTopicsLoading
+                  }
+                  aria-pressed={relatedTopicsOpen}
+                  className="flex items-center gap-1.5 rounded-full bg-teal-600/85 px-3 py-1 text-xs text-white hover:bg-teal-600 disabled:opacity-50"
+                  title={t.relatedTopics}
+                >
+                  <BloomGlyph className="h-3.5 w-3.5" />
+                  {t.relatedTopics}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={triggerExpand}
+                  disabled={
+                    phase === "generating" ||
+                    !page?.imageDataUrl ||
+                    (bloom !== null && !bloom.done)
+                  }
+                  className="flex items-center gap-1.5 rounded-full bg-teal-600/85 px-3 py-1 text-xs text-white hover:bg-teal-600 disabled:opacity-50"
+                  title={t.aroundTitle}
+                >
+                  <BloomGlyph className="h-3.5 w-3.5" />
+                  {t.around}
+                </button>
+              )}
               {!PRODUCT_FLAGS.nasSlim && (
                 <>
                   <button
@@ -4589,6 +4821,23 @@ export default function PlayPage() {
         </div>
       )}
 
+      {page?.imageDataUrl && viewMode === "page" && branchOptions.length > 1 && (
+        <BranchChooser beacons={branchOptions} onSelect={selectFromMap} t={t} />
+      )}
+      {PRODUCT_FLAGS.nasSlim &&
+        page?.imageDataUrl &&
+        viewMode === "page" &&
+        relatedTopicsOpen && (
+          <RelatedTopicsTray
+            topics={relatedTopics}
+            loading={relatedTopicsLoading}
+            error={relatedTopicsError}
+            onPick={selectRelatedTopic}
+            onClose={closeRelatedTopics}
+            t={t}
+          />
+        )}
+
       {page?.nodeId && (
         <div className="flex flex-col items-center gap-1 text-xs">
           <div className="flex items-center gap-2 opacity-60">
@@ -4632,7 +4881,15 @@ export default function PlayPage() {
         />
       )}
 
-      {helpOpen && <HelpOverlay onClose={() => setHelpOpen(false)} t={t} />}
+      {helpOpen && (
+        <HelpOverlay
+          onClose={() => setHelpOpen(false)}
+          {...(PRODUCT_FLAGS.nasSlim
+            ? { breadthShortcut: t.shortcutRelatedTopics }
+            : {})}
+          t={t}
+        />
+      )}
       <CodexPanel
         open={codexOpen}
         onClose={() => setCodexOpen(false)}
@@ -4664,6 +4921,9 @@ export default function PlayPage() {
             onShowHelp={() => setHelpOpen(true)}
             worldHint={worldEnabled}
             enterHintActionable={ENTER_COACH_ENABLED}
+            {...(PRODUCT_FLAGS.nasSlim
+              ? { breadthLabel: t.coachRelatedTopics }
+              : {})}
             variant={
               coachEnabled && history.items.length === 0 ? "pre" : "post"
             }
@@ -4692,7 +4952,7 @@ export default function PlayPage() {
         />
       )}
 
-      {bloom && (
+      {!PRODUCT_FLAGS.nasSlim && bloom && (
         <NeighbourTray
           t={t}
           items={bloom.items}

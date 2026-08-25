@@ -259,6 +259,17 @@ def _route(system: str, user: str) -> str:
                 ]
             }
         )
+    if "related topics" in s or '"topics"' in s:
+        return json.dumps(
+            {
+                "topics": [
+                    "Origins and history",
+                    "Key parts and structure",
+                    "How it works",
+                    "Modern examples",
+                ]
+            }
+        )
     # The expand-outward neighbour survey (providers/llm/world.py).
     if "expand outward" in s:
         scales = ("container", "peer", "peer", "component")

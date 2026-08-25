@@ -16,6 +16,8 @@ interface Props {
   enterHintActionable?: boolean;
   /** Pre-first-page hint vs post-first-page tap/around pairing. Default post. */
   variant?: FirstRunCoachVariant;
+  /** NAS replaces the breadth action with text-only related topics. */
+  breadthLabel?: string;
   /** When wired, renders a small × that retires the coach for good (persisted).
    *  Absent → no dismiss control, so existing call sites are byte-unchanged. */
   onDismiss?: () => void;
@@ -34,6 +36,7 @@ export function FirstRunCoach({
   worldHint = false,
   enterHintActionable = false,
   variant = "post",
+  breadthLabel,
   onDismiss,
   t = getStrings("en"),
 }: Props) {
@@ -72,7 +75,7 @@ export function FirstRunCoach({
             )}
             <span className="flex items-center gap-1.5 whitespace-nowrap opacity-80">
               <BloomGlyph className="h-3.5 w-3.5 text-teal-600" />
-              {t.coachAround}
+              {breadthLabel ?? t.coachAround}
               <kbd className="rounded border border-[var(--color-edge)] px-1 font-mono text-[10px]">
                 E
               </kbd>

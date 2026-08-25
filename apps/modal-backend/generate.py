@@ -1476,6 +1476,84 @@ async def resolve_click(req: Request, body: ResolveClickBody) -> JSONResponse:
     )
 
 
+class RelatedTopicsBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=128)
+    page_title: str = Field(min_length=1, max_length=240)
+    query: str = Field(min_length=1, max_length=600)
+    output_locale: str | None = None
+    trace_id: str | None = None
+
+
+def _clean_related_topics(value: Any, max_topics: int = 5) -> list[str]:
+    items = value.get("topics", []) if isinstance(value, dict) else []
+    if not isinstance(items, list):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        topic = str(item).strip()[:120]
+        key = topic.casefold()
+        if not topic or key in seen:
+            continue
+        seen.add(key)
+        out.append(topic)
+        if len(out) >= max_topics:
+            break
+    return out
+
+
+@fastapi_app.post("/related-topics")
+async def related_topics(req: Request, body: RelatedTopicsBody) -> JSONResponse:
+    """Return text choices only; no image generation or search is involved."""
+    from obs import TRACE_HEADER, bind_trace, record_error
+    from providers import llm as llm_provider
+    from providers import openclaw_runtime, spend
+
+    trace_id = bind_trace(req.headers.get(TRACE_HEADER) or body.trace_id)
+    guard = _paid_guard(req, trace_id, body.session_id)
+    if guard is not None:
+        return guard
+    if not openclaw_runtime.enabled():
+        spend.record_vlm_call(body.session_id)
+    try:
+        if openclaw_runtime.enabled():
+            system = (
+                f"You help a reader continue an illustrated page titled '{body.page_title}' "
+                f"(query: '{body.query}'). Suggest 3 to 5 concise, distinct related "
+                "topics. Return JSON only as {\"topics\":[\"short topic\"]}. "
+                "Each topic must be a readable 2-8 word phrase in the parent's "
+                "subject domain. Do not generate or edit an image and do not call "
+                "search tools."
+            )
+            locale = body.output_locale or "auto"
+            user = f"Return choices in locale '{locale}'. Return 3 to 5 choices, or an empty list."
+            raw = await openclaw_runtime.OpenClawGatewayClient().responses_json(
+                system,
+                user,
+                max_output_tokens=500,
+                usage_kind="planner",
+            )
+            topics = _clean_related_topics(raw)
+        else:
+            topics = await llm_provider.propose_related_topics(
+                parent_title=body.page_title,
+                parent_query=body.query,
+                output_locale=body.output_locale,
+                max_topics=5,
+            )
+    except Exception as exc:
+        record_error("related_topics", exc, session_id=body.session_id)
+        return JSONResponse(
+            {"error": f"{type(exc).__name__}: {exc}", "trace_id": trace_id},
+            status_code=502,
+            headers={"X-Trace-Id": trace_id},
+        )
+    return JSONResponse(
+        {"topics": topics[:5], "trace_id": trace_id},
+        headers={"X-Trace-Id": trace_id},
+    )
+
+
 class PrecomputeBody(BaseModel):
     image_data_url: str
     parent_title: str | None = None

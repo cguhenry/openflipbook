@@ -108,6 +108,7 @@ from .world import (
     NEIGHBORS_SCHEMA,
     PLAN_WORLD_SCHEMA,
     PLAN_WORLD_SYSTEM,
+    RELATED_TOPICS_SCHEMA,
     EditPlan,
     Neighbor,
     _build_neighbors,
@@ -120,4 +121,6 @@ from .world import (
     parse_scene_graph,
     plan_world_from_description,
     propose_neighbors,
+    propose_related_topics,
+    _build_related_topics,
 )

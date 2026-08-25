@@ -29,6 +29,7 @@ def test_import_exposes_the_generate_app(monkeypatch: pytest.MonkeyPatch) -> Non
         "/sse/generate",
         "/animate",
         "/resolve-click",
+        "/related-topics",
         "/health",
         "/status",
         "/models",

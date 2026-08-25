@@ -4,6 +4,7 @@ import { getStrings, type LocaleStrings } from "@/lib/i18n";
 
 interface Props {
   onClose: () => void;
+  breadthShortcut?: string;
   t?: LocaleStrings;
 }
 
@@ -13,7 +14,11 @@ interface Props {
  * button dismisses; Esc handling is wired on the page so it stacks
  * properly with the quickbar / context menu.
  */
-export function HelpOverlay({ onClose, t = getStrings("en") }: Props) {
+export function HelpOverlay({
+  onClose,
+  breadthShortcut,
+  t = getStrings("en"),
+}: Props) {
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4"
@@ -32,7 +37,7 @@ export function HelpOverlay({ onClose, t = getStrings("en") }: Props) {
           <Row k="T" v={t.shortcutToggleScrubber} />
           <Row k="K" v={t.shortcutToggleCodex} />
           <Row k="G" v={t.shortcutToggleGeometry} />
-          <Row k="E" v={t.shortcutLookAround} />
+          <Row k="E" v={breadthShortcut ?? t.shortcutLookAround} />
           <Row k="/" v={t.shortcutJump} />
           <Row k="?" v={t.shortcutHelp} />
           <Row k={t.keyEscape} v={t.shortcutClose} />
