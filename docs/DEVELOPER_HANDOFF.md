@@ -1,6 +1,6 @@
 # OpenFlipbook NAS — Developer Handoff
 
-Release: `nas-self-use-v1.0.1`
+Release: `nas-self-use-v1.0.2`
 Next.js baseline: `15.5.24`
 
 ## Purpose
@@ -97,7 +97,7 @@ Readiness must not dispatch AI/search.
 
 ## Security baseline
 
-`nas-self-use-v1.0.1` pins Next.js `15.5.24`, the August 2026 15.x
+`nas-self-use-v1.0.2` pins Next.js `15.5.24`, the August 2026 15.x
 Maintenance-LTS security backport.
 
 Routine security maintenance stays on Next 15 unless a separately reviewed

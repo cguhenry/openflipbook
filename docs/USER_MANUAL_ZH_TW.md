@@ -1,6 +1,6 @@
 # OpenFlipbook NAS 使用說明書
 
-Release：`nas-self-use-v1.0.1`
+Release：`nas-self-use-v1.0.2`
 安全基線：Next.js `15.5.24`
 介面預設：繁體中文（zh-TW）
 
@@ -162,7 +162,7 @@ World Mode、AI video、AI prefetch、provider/model 切換均停用。
 
 ## 21. 版本
 
-正式自用 release：`nas-self-use-v1.0.1`
+正式自用 release：`nas-self-use-v1.0.2`
 Next.js：`15.5.24`
 
 包含 HF1–HF4 的互動/persistence 修復與 2026-08 Next.js security maintenance。

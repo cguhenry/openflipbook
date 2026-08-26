@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { listNodesBySession, type NodeRow } from "@/lib/db";
+import { listNodesBySession, listSessionSummaries, type NodeRow } from "@/lib/db";
 import { readServerEnv } from "@/lib/env";
 import {
   buildOwnerBackupArchive,
@@ -37,11 +37,13 @@ export async function GET() {
   }
 
   try {
-    const ownedSessionIds = await listCurrentOwnerSessionIds();
+    const backupSessionIds = env.FLIPBOOK_NAS_SELF_USE
+      ? (await listSessionSummaries()).map((session) => session.session_id)
+      : await listCurrentOwnerSessionIds();
     const sessions: string[] = [];
     const nodes: BackupSourceNode[] = [];
     const images = new Map<string, { bytes: Uint8Array; contentType: string }>();
-    for (const sessionId of ownedSessionIds) {
+    for (const sessionId of backupSessionIds) {
       const rows = await listAllSessionNodes(sessionId);
       if (rows.length === 0) continue;
       sessions.push(sessionId);
@@ -58,7 +60,14 @@ export async function GET() {
       }
     }
     if (sessions.length === 0) {
-      return NextResponse.json({ error: "no sessions owned by this browser" }, { status: 404 });
+      return NextResponse.json(
+        {
+          error: env.FLIPBOOK_NAS_SELF_USE
+            ? "no sessions available for NAS backup"
+            : "no sessions owned by this browser",
+        },
+        { status: 404 },
+      );
     }
 
     const backup = await buildOwnerBackupArchive({ sessions, nodes, images });

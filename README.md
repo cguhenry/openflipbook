@@ -2,7 +2,7 @@
 
 > 私人 NAS 自用版。以 AI 產生的圖像作為主要介面，點選圖中的語意區域即可沿著主題繼續探索。
 
-**Release:** `nas-self-use-v1.0.1`
+**Release:** `nas-self-use-v1.0.2`
 **Security baseline:** Next.js `15.5.24`
 **Default UI:** 繁體中文 (`zh-TW`)
 
@@ -80,7 +80,7 @@ curl -fsS http://127.0.0.1:3000/api/ready
 
 ## 安全基線
 
-`nas-self-use-v1.0.1` 使用 Next.js `15.5.24`，包含 2026-08
+`nas-self-use-v1.0.2` 使用 Next.js `15.5.24`，包含 2026-08
 Maintenance-LTS security backport，並完成 Web rollback / roll-forward 與
 Chromium regression。
 

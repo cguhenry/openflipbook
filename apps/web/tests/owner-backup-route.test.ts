@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   listOwned: vi.fn(),
+  listSummaries: vi.fn(),
   listNodes: vi.fn(),
   getStored: vi.fn(),
 }));
@@ -11,6 +12,7 @@ vi.mock("@/lib/session-owner", () => ({
 }));
 vi.mock("@/lib/db", () => ({
   listNodesBySession: mocks.listNodes,
+  listSessionSummaries: mocks.listSummaries,
 }));
 vi.mock("@/lib/r2", () => ({
   getStoredBytes: mocks.getStored,
@@ -46,6 +48,7 @@ const row = {
 
 describe("GET /api/backup/owner", () => {
   beforeEach(() => {
+    vi.stubEnv("FLIPBOOK_NAS_SELF_USE", "false");
     vi.stubEnv("MONGODB_URI", "mongodb://mongo");
     vi.stubEnv("MONGODB_DB", "openflipbook");
     vi.stubEnv("R2_ENDPOINT", "http://minio:9000");
@@ -54,6 +57,7 @@ describe("GET /api/backup/owner", () => {
     vi.stubEnv("R2_SECRET_ACCESS_KEY", "fake-secret");
     vi.stubEnv("R2_PUBLIC_BASE_URL", "http://minio/openflipbook");
     mocks.listOwned.mockResolvedValue(["session-a"]);
+    mocks.listSummaries.mockResolvedValue([{ session_id: "session-a" }]);
     mocks.listNodes.mockResolvedValue({ rows: [row], next_cursor: null });
     mocks.getStored.mockResolvedValue({
       bytes: Buffer.from("image"),
@@ -81,6 +85,65 @@ describe("GET /api/backup/owner", () => {
       cursor: null,
       limit: 200,
     });
+    expect(mocks.listSummaries).not.toHaveBeenCalled();
+  });
+
+  it("exports the full History scope in NAS self-use mode", async () => {
+    vi.stubEnv("FLIPBOOK_NAS_SELF_USE", "true");
+    const other = {
+      ...row,
+      id: "root-b",
+      session_id: "session-b",
+      image_key: "root-b.png",
+    };
+    mocks.listOwned.mockResolvedValue(["session-b"]);
+    mocks.listSummaries.mockResolvedValue([
+      { session_id: "session-a" },
+      { session_id: "session-b" },
+    ]);
+    mocks.listNodes.mockImplementation(async (sessionId: string) => ({
+      rows: [sessionId === "session-a" ? row : other],
+      next_cursor: null,
+    }));
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    const parsed = await parseOwnerBackupArchive(
+      new Uint8Array(await response.arrayBuffer()),
+    );
+    expect(parsed.sessions).toEqual(["session-a", "session-b"]);
+    expect(parsed.nodes.map((node) => node.session_id)).toEqual([
+      "session-a",
+      "session-b",
+    ]);
+    expect(mocks.listSummaries).toHaveBeenCalledOnce();
+    expect(mocks.listOwned).not.toHaveBeenCalled();
+  });
+
+  it("keeps the non-NAS backup limited to the current owner", async () => {
+    const other = {
+      ...row,
+      id: "root-b",
+      session_id: "session-b",
+      image_key: "root-b.png",
+    };
+    mocks.listOwned.mockResolvedValue(["session-b"]);
+    mocks.listSummaries.mockResolvedValue([
+      { session_id: "session-a" },
+      { session_id: "session-b" },
+    ]);
+    mocks.listNodes.mockResolvedValue({ rows: [other], next_cursor: null });
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    const parsed = await parseOwnerBackupArchive(
+      new Uint8Array(await response.arrayBuffer()),
+    );
+    expect(parsed.sessions).toEqual(["session-b"]);
+    expect(mocks.listOwned).toHaveBeenCalledOnce();
+    expect(mocks.listSummaries).not.toHaveBeenCalled();
   });
 
   it("fails closed when a required owner image is missing", async () => {
@@ -101,6 +164,20 @@ describe("GET /api/backup/owner", () => {
     const response = await GET();
 
     expect(response.status).toBe(404);
+    expect(mocks.listNodes).not.toHaveBeenCalled();
+  });
+
+  it("reports an accurate NAS empty state", async () => {
+    vi.stubEnv("FLIPBOOK_NAS_SELF_USE", "true");
+    mocks.listSummaries.mockResolvedValue([]);
+
+    const response = await GET();
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "no sessions available for NAS backup",
+    });
+    expect(mocks.listOwned).not.toHaveBeenCalled();
     expect(mocks.listNodes).not.toHaveBeenCalled();
   });
 });
