@@ -1,154 +1,108 @@
-# openflipbook
+# OpenFlipbook NAS — 私人互動式圖像探索
 
-> **An open-source [flipbook.page](https://flipbook.page) clone, image-is-the-UI.** Every page is an AI-generated illustration. Tap anywhere on the image and a vision model resolves what you tapped, turns it into the next page, and keeps going. Seed from a text query or drop in any image. Bring your own API keys; clone, run, hack.
+> 私人 NAS 自用版。以 AI 產生的圖像作為主要介面，點選圖中的語意區域即可沿著主題繼續探索。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/eren23/openflipbook?style=social)](https://github.com/eren23/openflipbook/stargazers)
-[![Node](https://img.shields.io/badge/node-%3E%3D20-green.svg)](package.json)
-[![Next.js](https://img.shields.io/badge/Next.js-15-black.svg)](https://nextjs.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-Modal-009688.svg)](https://modal.com)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+**Release:** `nas-self-use-v1.0.1`
+**Security baseline:** Next.js `15.5.24`
+**Default UI:** 繁體中文 (`zh-TW`)
 
-## Demo
+## 這個版本是什麼
 
-![openflipbook demo — tap any region of an AI-generated page; a vision model resolves what you tapped and renders the next page](apps/web/public/demo.gif)
+這個 repository 是基於 `eren23/openflipbook` 的私人 NAS self-use fork。
 
-Sped up 4×: landing → `"how does a steam engine work"` deeplink → two click-to-explore hops. [Full-quality MP4 with audio](https://github.com/eren23/openflipbook/raw/main/apps/web/public/demo.mp4). Recorded with the Playwright driver under [`scripts/record-demo/`](scripts/record-demo/) — run `pnpm record-demo` to re-capture against your own stack.
+目前產品路線：
+- Web：Next.js 15，NAS 上唯一 LAN-facing 服務。
+- Backend：FastAPI，僅透過 authenticated OpenClaw Gateway 使用模型。
+- Planner / alignment：`openai/gpt-5.6-luna`
+- Image：`openai/gpt-image-2`
+- Metadata：MongoDB
+- Images：MinIO
+- canonical Compose project：`openflipbook-a0`
 
-## Why this exists
+沒有 FAL/OpenRouter/direct API-key fallback。
 
-[flipbook.page](https://flipbook.page) is fun but closed. I wanted the same loop — one image per page, tap to explore — on a stack I actually own: my keys, my storage, my backend. This is that, MIT-licensed, with every piece swappable behind small provider interfaces in `apps/modal-backend/providers/`.
+## 主要功能
 
-## TL;DR
+- 文字主題或圖片起始
+- 可見的語意 hotspot 標籤與圖像區域探索
+- 圖片外的分支 chooser
+- 「相關主題」先顯示 3–5 個文字建議，選一個後才生成
+- 歷史紀錄 Resume / 刪除
+- Sources 面板
+- 繁中 UI，UI locale 與 output locale 分離
+- 單一 session 離線匯出
+- owner backup / dry-run / restore
+- `/api/ready`、`/api/status`、`/status`
 
-- **One image per page**, rendered by fal (default balanced tier: [`nano-banana-pro`](https://fal.ai/models/fal-ai/nano-banana-pro)). Text inside the page is pixels, not DOM.
-- **Click → next page.** [`google/gemini-3-flash-preview`](https://openrouter.ai/google/gemini-3-flash-preview) via OpenRouter resolves the clicked region to a phrase; the same model family plans the page with web-search grounding.
-- **Seed from your own image.** Upload / drag-and-drop works as a starting point.
-- **Optional animation toggle.**
-  - Default: one-shot 5s MP4 from `fal-ai/ltx-video/image-to-video`. Cheap (~$0.02/clip), no GPU on your side.
-  - Streaming: the same LTXF binary WebSocket protocol Flipbook uses, deployed to your own Modal account — true fragmented-MP4 streaming into a `<video>` tag via Media Source Extensions.
-- **Permalinks.** `/n/:id` hydrates from Mongo + R2 without regenerating.
-- **Pin a style.** Hit the 📌 on any page and every new page in the session inherits that look (palette, line work, perspective). Persists across reload.
-- **Citations.** When the planner runs with `:online`, the source URLs ride through to a tiny `📎` chip in the corner of the page — one click, you can see what it actually read.
-- **Shift-drag to circle a region.** Freehand stroke on the image, release, and the next page focuses on what you scribbled. Same VLM as the click path, just more pointed.
-- **Time-scrubber (`T`).** Linear film-strip of every page in your trail; drag the scrubber to time-travel through your own exploration.
-- **Faster clicks.** As soon as a page renders, the VLM precomputes the 3–4 most clickable regions in the background, so most taps skip the resolve round-trip.
-- **Progressive render.** On the balanced/pro tiers the cheap fast model paints a draft in parallel, so you get something on screen seconds before the final lands. Toggle off with `PROGRESSIVE_DRAFT=false` if you'd rather save the extra fal call.
-- **Edit a page in place.** Describe a change and the page revises itself instead of spawning a child. With `EDIT_REGION` on you drag the exact region, the mask rides the edit, and a judge scores the result — verdict chip + one-click revert included.
-- **World Mode (off by default).** Flip `WORLD_MODE` and pages become places: tap a glowing region to *enter* it as a scene, go deeper, ascend back out, or pan to a logical neighbour — all rungs on one metric scale ladder. Every page gets its entities and camera extracted into a live geo overlay and a persistent world map, so revisiting a place brings back *that* place.
-- **Critic loop.** Long renders (entering a scene, masked edits) are judged by a panel of VLM critics — wrong camera, wrong place, or wrong art medium gets rejected and retried with the critic's rationale folded into the prompt. You watch it self-correct instead of staring at a spinner.
-- **BYO keys.** No hosted backend. Clone it, run it, pay your own bills.
+## 快速使用
 
-```
-   ┌────────────────────────┐                  ┌─────────────────────────┐
-   │  type query / drop img │                  │  illustrated page       │
-   └─────────┬──────────────┘                  └─────────┬───────────────┘
-             │                                           │ tap on a region
-             ▼                                           ▼
-    ┌───────────────────┐   plan page    ┌──────────────────────────┐
-    │  OpenRouter Gemini │ ─────────────▶ │  fal nano-banana-pro      │
-    │  3 Flash (+ search)│                │  renders labelled image   │
-    └───────────────────┘                └──────────────┬───────────┘
-             ▲                                          │
-             │  subject phrase                          │
-             │                                          ▼
-    ┌────────┴──────────┐    click +    ┌──────────────────────────┐
-    │ OpenRouter Gemini 3  image ◀── │ next page conditioning    │
-    │ Flash (VLM)          │               └──────────────────────────┘
-                                                       │
-                                                       ▼
-                               ┌────────────────────────────────────┐
-                               │  optional: Animate toggle          │
-                               │  ├─ default: fal-ai/ltx-video clip │
-                               │  └─ streaming: Modal LTX-2 via WS  │
-                               │     with custom LTXF fMP4 framing  │
-                               └────────────────────────────────────┘
+1. 開啟 `http://<NAS-IP>:3000/play`。
+2. 輸入主題，或按「上傳」。
+3. 等待頁面生成並儲存。
+4. 點 hotspot 標籤或圖中區域。
+5. 從圖片下方分支列切換已探索分支。
+6. 按「相關主題」先看文字建議，再選一個生成。
+7. 「歷史紀錄」可 Resume 或刪除。
 
-                            persistence: Cloudflare R2 + MongoDB
-```
+完整說明：
+[`docs/OpenFlipbook_NAS_使用說明書_zh-TW.docx`](docs/OpenFlipbook_NAS_使用說明書_zh-TW.docx)
 
-**Read the backstory:** [`docs/STORY.md`](docs/STORY.md) — what we hoped Flipbook would be, what it actually is, and how the internals look once you crack the bundle open.
-
-## Quickstart
-
-The fastest path — Docker, local Mongo + blob storage, cloud AI (two keys):
+## Canonical NAS 操作
 
 ```bash
-git clone https://github.com/eren23/openflipbook
-cd openflipbook
-
-cp .env.example .env          # fill FAL_KEY + OPENROUTER_API_KEY
-make demo                     # → http://localhost:3000/play
+scripts/nas-compose.sh config --quiet
+scripts/nas-compose.sh ps
+scripts/nas-compose.sh up -d
 ```
 
-That's it. Mongo, Minio, backend, and web all come up wired together. Open [`/status`](http://localhost:3000/status) for a live env check. Full compose reference: [`docs/DOCKER.md`](docs/DOCKER.md).
+Web-only update:
 
-**Want the world stuff?** `make demo-world` is the same two-key stack with World Mode + scale-ladder navigation switched on: taps *enter* places, you can go deeper, ascend back out, and pan to neighbours. (It's the same code, just flags — kept off in `make demo` so the classic flow stays untouched.)
-
-**Images-only cloud:** `make demo-local` runs the planner + click VLM on local Ollama — only `FAL_KEY` needed (first run pulls multi-GB models; CPU-slow).
-
-**Without Docker:** see [`docs/LOCAL_DEV.md`](docs/LOCAL_DEV.md).
-
-### Hosted setup (Modal + R2)
-
-If you want to deploy the backend to Modal and store blobs on Cloudflare R2 instead of the local stack, you'll also need Mongo/R2 credentials and a Modal token. Walkthrough: [`docs/BYO-KEYS.md`](docs/BYO-KEYS.md).
-
-## What you need (local demo)
-
-| Service | Used for | Variable |
-|---|---|---|
-| [fal](https://fal.ai/dashboard/keys) | image gen + optional animate | `FAL_KEY` |
-| [OpenRouter](https://openrouter.ai/keys) | planning + click VLM + web search | `OPENROUTER_API_KEY` |
-
-Mongo + blob storage run locally in Docker — no cloud accounts required for `make demo`.
-
-## What you need (hosted)
-
-| Service | Used for | Variable |
-|---|---|---|
-| [fal](https://fal.ai/dashboard/keys) | image gen (nano-banana) + optional animate fallback | `FAL_KEY` |
-| [OpenRouter](https://openrouter.ai/keys) | planning + click VLM + web search | `OPENROUTER_API_KEY` |
-| [Cloudflare R2](https://dash.cloudflare.com/?to=/:account/r2) | generated-image storage | `R2_*` + `R2_PUBLIC_BASE_URL` |
-| MongoDB | node graph + session metadata | `MONGODB_URI`, `MONGODB_DB` |
-| [Modal](https://modal.com) | Python backend host; optional GPU worker for streaming | `modal token new` |
-
-Full setup walkthrough: [`docs/BYO-KEYS.md`](docs/BYO-KEYS.md).
-
-## Repo layout
-
-```
-apps/
-  web/                Next.js 15 app (landing, /play, /n/:id, /status)
-  modal-backend/      FastAPI — SSE page gen, click VLM, optional LTX GPU worker
-packages/
-  config/             Shared TS types (GenerateEvent, LTXStreamStartMessage, …)
-infra/
-  MONGO.md            Document shape + hosting notes
-docs/
-  STORY.md            What we hoped Flipbook was, vs. what it is
-  BYO-KEYS.md         Full credential walkthrough
-  DOCKER.md           Compose stack docs
-  LOCAL_DEV.md        Running without Docker
+```bash
+scripts/nas-compose.sh build web
+scripts/nas-compose.sh up -d --no-deps web
+curl -fsS http://127.0.0.1:3000/api/ready
 ```
 
-## Further reading
+不要使用 `docker compose down -v`。
 
-- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — code layout, where things live, how the play surface is split into hooks vs components vs lib.
-- **[docs/STORY.md](docs/STORY.md)** — the backstory + reverse-engineered LTXF protocol.
-- **[docs/BYO-KEYS.md](docs/BYO-KEYS.md)** — credential + deploy walkthrough.
-- **[docs/DOCKER.md](docs/DOCKER.md)** — compose stack reference.
-- **[docs/LOCAL_DEV.md](docs/LOCAL_DEV.md)** — running without Docker.
-- **[docs/TESTING.md](docs/TESTING.md)** — the free gates + the paid eval benches (scenario lab, layout/style A/Bs, reconstruction bench).
-- **[infra/MONGO.md](infra/MONGO.md)** — document shape + index layout.
+## 資料與備份
 
-## Contributing
+- Mongo：`openflipbook-a0_mongo-data`
+- MinIO：`openflipbook-a0_minio-data`
 
-PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for ground rules (BYO-keys stays BYO-keys, one image per page, no vendored Flipbook source) and local setup. Security issues: [`SECURITY.md`](SECURITY.md).
+升級前先：
+1. 下載完整 owner backup。
+2. 記錄 SHA-256。
+3. 執行 restore dry-run。
+4. 再更新 stateless application services。
 
-## License
+離線書用於閱讀；完整備份才是 disaster recovery。
 
-[MIT](LICENSE) © 2026 Eren Akbulut.
+## 安全基線
 
-## Credits
+`nas-self-use-v1.0.1` 使用 Next.js `15.5.24`，包含 2026-08
+Maintenance-LTS security backport，並完成 Web rollback / roll-forward 與
+Chromium regression。
 
-The original paradigm, `anchor_loop` trick, and LTX-2 streaming engine are the work of [Zain Shah](https://x.com/zan2434), [Eddie Jiao](https://x.com/eddiejiao_obj), and [Drew Carr](https://x.com/drewocarr) on Flipbook. This repo is an independent open-source re-implementation written from public bundle inspection — no Flipbook source code is used.
+## NAS 版刻意停用
+
+- World Mode
+- AI video
+- AI prefetch
+- alternate provider fallback
+- editable provider/model routing
+- public multi-user / SaaS
+- upstream auto-merge
+
+## 維護
+
+- [`docs/NAS_MAINTENANCE.md`](docs/NAS_MAINTENANCE.md)
+- [`docs/DEVELOPER_HANDOFF.md`](docs/DEVELOPER_HANDOFF.md)
+
+未來只在 security advisory、targeted upstream fix、OpenClaw compatibility
+或實際 bug 出現時開 maintenance round。
+
+## Upstream / License
+
+Fork 自 [`eren23/openflipbook`](https://github.com/eren23/openflipbook)。
+保留原專案 MIT License 與 upstream attribution。
